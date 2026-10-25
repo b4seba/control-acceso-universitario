@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package access_control;
+
+option go_package = "cl.uautonoma.acceso/ingestion/internal/grpc/pb";
+
+// Servicio gRPC de Control de Acceso Perimetral e Ingesta de Torniquetes
+service TurnstileIngestService {
+  // Ingesta masiva de eventos transaccionales desde el Outbox de los torniquetes
+  rpc IngestBatch(BatchIngestRequest) returns (BatchIngestResponse);
+
+  // Sincronización de lista blanca y vectores 512D para operación en Modo Isla
+  rpc SyncWhitelist(SyncWhitelistRequest) returns (SyncWhitelistResponse);
+
+  // Verificación biométrica 1:1 directa en backend
+  rpc VerifyBiometric(BiometricVerifyRequest) returns (BiometricVerifyResponse);
+
+  // Healthcheck de alta frecuencia del nodo central
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Evento forense individual del torniquete
+message OutboxEventProto {
+  string event_uuid = 1;
+  string turnstile_id = 2;
+  string campus_id = 3;
+  string student_id = 4;
+  string student_rut = 5;
+  string access_timestamp = 6;
+  string access_result = 7; // GRANTED, DENIED
+  string denial_reason = 8;
+  int32 latency_ms = 9;
+  string payload_hash = 10;
+}
+
+message BatchIngestRequest {
+  string turnstile_id = 1;
+  string campus_id = 2;
+  string dispatch_timestamp = 3;
+  int32 events_count = 4;
+  repeated OutboxEventProto events = 5;
+}
+
+message BatchIngestResponse {
+  string status = 1; // ACK_CONFIRMED
+  string processed_at = 2;
+  int32 batch_size = 3;
+  map<string, string> ack_map = 4; // event_uuid -> ack_hash
+  string execution_time = 5;
+}
+
+message SyncWhitelistRequest {
+  string turnstile_id = 1;
+  string campus_id = 2;
+  string last_sync_timestamp = 3;
+}
+
+message WhitelistUserProto {
+  string student_id = 1;
+  string rut = 2;
+  string full_name = 3;
+  string role = 4;
+  string career = 5;
+  string campus = 6;
+  string enrollment_status = 7;
+  repeated float face_vector_512 = 8;
+}
+
+message SyncWhitelistResponse {
+  int32 total_users = 1;
+  repeated WhitelistUserProto users = 2;
+  string sync_timestamp = 3;
+}
+
+message BiometricVerifyRequest {
+  string student_id = 1;
+  string rut = 2;
+  repeated float live_vector_512 = 3;
+}
+
+message BiometricVerifyResponse {
+  bool match = 1;
+  float similarity_score = 2; // Similitud Coseno (0.0 - 1.0)
+  string student_name = 3;
+  string status = 4;
+}
+
+message HealthCheckRequest {
+  string client_id = 1;
+}
+
+message HealthCheckResponse {
+  string status = 1; // HEALTHY
+  int32 queue_depth = 2;
+  int32 active_workers = 3;
+  string uptime = 4;
+}

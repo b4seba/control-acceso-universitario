@@ -1,0 +1,39 @@
+# Node & Web
+node_modules/
+apps/web_enrollment/node_modules/
+.npm
+npm-debug.log*
+
+# Flutter & Dart
+.dart_tool/
+apps/*/.dart_tool/
+build/
+apps/*/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+apps/*/windows/flutter/ephemeral/
+apps/*/android/.gradle/
+apps/*/android/local.properties
+
+# Python
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*.pyc
+*.pyo
+.venv/
+env/
+
+# IDE & OS
+.obsidian/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Documentacion y Metodologia
+.gsd/
+docs/
+Contexto/
+ARQUITECTURA_EV2.md
