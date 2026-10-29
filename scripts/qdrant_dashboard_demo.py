@@ -37,12 +37,13 @@ def main():
 
     # 1. Inicialización de Qdrant Engine
     print("\n[+] Inicializando motor de base de datos vectorial Qdrant...")
-    client = QdrantClient(":memory:")
+    client = QdrantClient("http://localhost:6333")
     collection_name = "student_face_embeddings_512d"
 
-    client.create_collection(
-        collection_name=collection_name,
-        vectors_config=VectorParams(size=512, distance=Distance.COSINE),
+    if not client.collection_exists(collection_name):
+        client.create_collection(
+            collection_name=collection_name,
+            vectors_config=VectorParams(size=512, distance=Distance.COSINE),
     )
     print(f"    Colección: '{collection_name}'")
     print(f"    Dimensión Vectorial: 512 floats (MobileFaceNet / ResNet)")
@@ -83,7 +84,7 @@ def main():
     # Caso 1: Rostro idéntico de Sebastián Freire capturado por cámara
     query_vector_ok = generate_512d_vector("freire-face-seed-2026")
     results_ok = client.query_points(
-        collection_name=collection_name,
+            collection_name=collection_name,
         query=query_vector_ok,
         limit=1,
     )
@@ -98,7 +99,7 @@ def main():
     # Caso 2: Intento de suplantación (Rostro intruso no matriculado)
     query_vector_intruder = generate_512d_vector("intruder-impostor-face-999")
     results_intruder = client.query_points(
-        collection_name=collection_name,
+            collection_name=collection_name,
         query=query_vector_intruder,
         limit=1,
     )

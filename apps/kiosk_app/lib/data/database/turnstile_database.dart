@@ -65,7 +65,7 @@ class TurnstileDatabase {
   Future<void> _onCreate(Database db, int version) async {
     // 1. Tabla Whitelist Local de Usuarios
     await db.execute('''
-      CREATE TABLE whitelist_users (
+      CREATE TABLE IF NOT EXISTS whitelist_users (
         student_id TEXT PRIMARY KEY,
         rut TEXT NOT NULL,
         full_name TEXT NOT NULL,
@@ -79,7 +79,7 @@ class TurnstileDatabase {
 
     // 2. Tabla Transactional Outbox (Eventos de acceso persistentes en disco)
     await db.execute('''
-      CREATE TABLE outbox_events (
+      CREATE TABLE IF NOT EXISTS outbox_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_uuid TEXT UNIQUE NOT NULL,
         turnstile_id TEXT NOT NULL,
@@ -99,8 +99,8 @@ class TurnstileDatabase {
     ''');
 
     // Índices B-Tree para optimización de consultas en < 3 ms
-    await db.execute('CREATE INDEX idx_outbox_status ON outbox_events(status);');
-    await db.execute('CREATE INDEX idx_whitelist_rut ON whitelist_users(rut);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_events(status);');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_whitelist_rut ON whitelist_users(rut);');
 
     // Poblar lista blanca inicial con estudiantes de prueba institucional
     await _seedInitialWhitelist(db);

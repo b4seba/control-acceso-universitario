@@ -12,7 +12,7 @@ import sqlite3
 import hashlib
 import threading
 from datetime import datetime, timezone
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 if sys.platform == "win32":
     try:
@@ -27,8 +27,19 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(PROJECT_ROOT, "ua_turnstile_edge.db")
 CASCADE_PATH = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 
+def generate_placeholder_frame(msg="ESPERANDO DISPOSITIVO DE CÁMARA..."):
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    img[:] = (20, 15, 10) # Fondo oscuro azulado
+    cv2.rectangle(img, (20, 20), (620, 460), (255, 200, 0), 2)
+    cv2.putText(img, "SIRAD - ACCESO KIOSKO EDGE (127.0.0.1:5050)", (40, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 200, 0), 2)
+    cv2.putText(img, msg, (40, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (220, 220, 220), 2)
+    cv2.putText(img, "Si la luz esta activa, desactiva la camara en la web.", (40, 270), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 150, 255), 1)
+    cv2.putText(img, "Reintentando conexion automatica con OpenCV...", (40, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 200, 100), 1)
+    _, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    return jpeg.tobytes()
+
 # Estado global compartido
-current_frame_jpeg = None
+current_frame_jpeg = generate_placeholder_frame()
 current_status = {
     "state": "IDLE",
     "student_id": "",
@@ -40,6 +51,8 @@ current_status = {
 }
 status_lock = threading.Lock()
 frame_lock = threading.Lock()
+vector_lock = threading.Lock()
+latest_live_vector = None
 
 def extract_512d_vector(face_img):
     if len(face_img.shape) == 3:
@@ -126,20 +139,58 @@ def record_outbox(student_id, rut, result, reason, latency_ms):
     except Exception as e:
         print("[!] Error outbox:", e)
 
+def open_camera():
+    # En Windows, intentar primero el backend estándar/MSMF para evitar bloqueos
+    for idx in [0, 1]:
+        try:
+            cap = cv2.VideoCapture(idx)
+            if cap.isOpened():
+                ret, test_f = cap.read()
+                if ret and test_f is not None and test_f.size > 0:
+                    print(f"[+] Cámara web conectada exitosamente en índice {idx}.")
+                    return cap
+                cap.release()
+        except Exception:
+            pass
+
+    # Si falló, intentar con DirectShow en Windows
+    if sys.platform == "win32":
+        for idx in [0, 1]:
+            try:
+                cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                if cap.isOpened():
+                    ret, test_f = cap.read()
+                    if ret and test_f is not None and test_f.size > 0:
+                        print(f"[+] Cámara web conectada exitosamente en índice {idx} (DSHOW).")
+                        return cap
+                    cap.release()
+            except Exception:
+                pass
+    return None
+
 def camera_loop():
     global current_frame_jpeg, current_status
     face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
     students = load_enrolled_students()
     print(f"[+] Servicio de cámara cargó {len(students)} estudiantes desde SQLite.")
 
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("[ERROR] No se pudo abrir la cámara web en índice 0.")
-        return
+    print("[*] Iniciando sondeo de dispositivo de video...")
+    cap = open_camera()
+    retry_count = 0
+    while cap is None or not cap.isOpened():
+        retry_count += 1
+        with frame_lock:
+            current_frame_jpeg = generate_placeholder_frame(f"ESPERANDO LIBERACION DE CAMARA (Intento #{retry_count})...")
+        if retry_count % 3 == 1:
+            print(f"[!] Cámara no disponible (intento #{retry_count}). Puede estar ocupada por la web o inicializándose. Reintentando en 2s...")
+        time.sleep(2.0)
+        cap = open_camera()
 
+    print("[+] Cámara web lista y activa para reconocimiento biométrico.")
     THRESHOLD = 0.65
     last_event_time = 0
     last_reload_time = time.time()
+    consecutive_failed_frames = 0
 
     while True:
         now = time.time()
@@ -149,9 +200,22 @@ def camera_loop():
             last_reload_time = now
 
         ret, frame = cap.read()
-        if not ret:
+        if not ret or frame is None:
+            consecutive_failed_frames += 1
+            if consecutive_failed_frames > 40:
+                print("[!] Señal de video perdida momentáneamente. Reconectando dispositivo...")
+                with frame_lock:
+                    current_frame_jpeg = generate_placeholder_frame("RECONECTANDO DISPOSITIVO DE VIDEO...")
+                cap.release()
+                cap = open_camera()
+                while cap is None or not cap.isOpened():
+                    time.sleep(2.0)
+                    cap = open_camera()
+                consecutive_failed_frames = 0
             time.sleep(0.03)
             continue
+
+        consecutive_failed_frames = 0
 
         frame = cv2.flip(frame, 1)
         h, w = frame.shape[:2]
@@ -170,6 +234,8 @@ def camera_loop():
             fx, fy, fw, fh = faces[0]
             face_crop = frame[fy:fy+fh, fx:fx+fw]
             live_vec = extract_512d_vector(face_crop)
+            with vector_lock:
+                latest_live_vector = live_vec.tolist()
             latency_ms = int((time.time() - start_eval) * 1000) + 75
 
             # Similitud Coseno
@@ -228,14 +294,22 @@ def camera_loop():
         time.sleep(0.02) # ~30 FPS
 
 class StreamingHandler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
     def do_GET(self):
-        # Habilitar CORS
         if self.path == "/status":
             with status_lock:
                 data = json.dumps(current_status).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -247,11 +321,28 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")
                 self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
                 self.send_header("Content-Length", str(len(frame)))
                 self.end_headers()
                 self.wfile.write(frame)
             else:
                 self.send_error(503, "Cámara no lista")
+
+        elif self.path == "/extract_vector":
+            with vector_lock:
+                vec = latest_live_vector
+            resp = json.dumps({
+                "status": "OK" if vec is not None else "NO_FACE_DETECTED",
+                "dimensions": len(vec) if vec is not None else 0,
+                "vector": vec if vec is not None else []
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
+            self.send_header("Content-Length", str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
 
         elif self.path == "/video_feed":
             self.send_response(200)
@@ -272,18 +363,11 @@ class StreamingHandler(BaseHTTPRequestHandler):
                         self.end_headers()
                         self.wfile.write(frame)
                         self.wfile.write(b"\r\n")
-                    time.sleep(0.033) # 30 FPS
+                    time.sleep(0.033)
             except Exception:
                 pass
         else:
             self.send_error(404)
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.end_headers()
 
     def do_POST(self):
         if self.path == "/enroll":
@@ -320,6 +404,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.send_response(201)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
                 self.send_header("Content-Length", str(len(resp)))
                 self.end_headers()
                 self.wfile.write(resp)
@@ -328,13 +413,139 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(err)
+
+        elif self.path == "/update_user_status":
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length)
+                data = json.loads(body.decode('utf-8'))
+                rut = data.get("rut", "")
+                student_id = data.get("student_id", "")
+                new_status = data.get("status", "VIGENTE")
+
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+                cur.execute("PRAGMA journal_mode = WAL;")
+                cur.execute("UPDATE whitelist_users SET status = ? WHERE rut = ? OR student_id = ?", (new_status, rut, student_id))
+                conn.commit()
+                conn.close()
+
+                resp = json.dumps({
+                    "status": "STATUS_UPDATED_SQLITE",
+                    "rut": rut,
+                    "new_status": new_status
+                }).encode('utf-8')
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.send_header("Content-Length", str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+            except Exception as e:
+                err = json.dumps({"error": str(e)}).encode('utf-8')
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(err)
+
+        elif self.path == "/delete_user":
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length)
+                data = json.loads(body.decode('utf-8'))
+                rut = data.get("rut", "")
+                student_id = data.get("student_id", "")
+
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+                cur.execute("PRAGMA journal_mode = WAL;")
+                cur.execute("DELETE FROM whitelist_users WHERE rut = ? OR student_id = ?", (rut, student_id))
+                conn.commit()
+                conn.close()
+
+                resp = json.dumps({
+                    "status": "DELETED_FROM_SQLITE",
+                    "rut": rut,
+                    "student_id": student_id
+                }).encode('utf-8')
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.send_header("Content-Length", str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+            except Exception as e:
+                err = json.dumps({"error": str(e)}).encode('utf-8')
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(err)
+
+        elif self.path == "/reconcile":
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length)
+                data = json.loads(body.decode('utf-8'))
+                users_list = data.get("users", [])
+
+                conn = sqlite3.connect(DB_PATH)
+                cur = conn.cursor()
+                cur.execute("PRAGMA journal_mode = WAL;")
+                cur.execute("DELETE FROM whitelist_users;")
+                for u in users_list:
+                    sid = u.get("student_id", "")
+                    rut = u.get("rut", "")
+                    fn = u.get("full_name", "")
+                    car = u.get("career", "")
+                    cam = u.get("campus", "")
+                    role = u.get("role", "ESTUDIANTE")
+                    st = u.get("status", "VIGENTE")
+                    vec = u.get("vector", [])
+                    cur.execute("""
+                    INSERT OR REPLACE INTO whitelist_users 
+                    (student_id, rut, full_name, career, campus, role, status, face_vector_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (sid, rut, fn, car, cam, role, st, json.dumps(vec)))
+                conn.commit()
+                conn.close()
+
+                resp = json.dumps({
+                    "status": "SQLITE_RECONCILED",
+                    "total_synced": len(users_list)
+                }).encode('utf-8')
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.send_header("Content-Length", str(len(resp)))
+                self.end_headers()
+                self.wfile.write(resp)
+            except Exception as e:
+                err = json.dumps({"error": str(e)}).encode('utf-8')
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(err)
+
         else:
             self.send_error(404)
 
     def log_message(self, format, *args):
-        return # Silenciar logs HTTP ruidosos
+        return
 
 def main():
     print("=" * 80)
@@ -344,7 +555,7 @@ def main():
     t = threading.Thread(target=camera_loop, daemon=True)
     t.start()
 
-    server = HTTPServer(("127.0.0.1", 5050), StreamingHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", 5050), StreamingHandler)
     print("[+] Servidor de streaming y telemetría activo en http://127.0.0.1:5050")
     print("    - Stream MJPEG:  http://127.0.0.1:5050/video_feed")
     print("    - Foto Snapshot: http://127.0.0.1:5050/snapshot")

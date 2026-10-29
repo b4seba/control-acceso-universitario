@@ -71,6 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_event_uuid ON access_audit_log(event_uuid);
 -- ============================================================================
 
 INSERT INTO campus (id, name, city, address) VALUES
+('CAMPUS_ALAMEDA', 'Campus Alameda', 'Santiago', 'Av. Libertador Bernardo O''Higgins 1234'),
 ('CAMPUS_PROVIDENCIA', 'Campus Providencia', 'Santiago', 'Av. Pedro de Valdivia 425'),
 ('CAMPUS_EL_LLANO', 'Campus El Llano Subercaseaux', 'San Miguel', 'Ricardo Morales 3369'),
 ('CAMPUS_TALCA', 'Campus Talca', 'Talca', 'Av. 5 Poniente 1670'),
@@ -86,5 +87,5 @@ INSERT INTO turnstiles (id, campus_id, name, ip_address) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO users_rbac (student_id, rut, full_name, email, role, career, campus_id, enrollment_status) VALUES
-('ua-stu-2026-001', '21.460.709-3', 'Sebastián Freire', 'sfreire@uautonoma.cl', 'ESTUDIANTE', 'Ingeniería Civil Informática', 'CAMPUS_PROVIDENCIA', 'VIGENTE'),
+('ua-stu-2026-001', '21.460.709-3', 'Sebastián Freire', 'sfreire@uautonoma.cl', 'ESTUDIANTE', 'Ingeniería Civil Informática', 'CAMPUS_PROVIDENCIA', 'VIGENTE')
 ON CONFLICT (student_id) DO NOTHING;

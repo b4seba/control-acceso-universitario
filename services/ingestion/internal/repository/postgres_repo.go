@@ -20,6 +20,8 @@ type RepositoryInterface interface {
 	CreateUser(ctx context.Context, user models.UserRBAC) error
 	GetUserByRUT(ctx context.Context, rut string) (*models.UserRBAC, error)
 	GetAllUsers(ctx context.Context) ([]models.UserRBAC, error)
+	UpdateUserStatus(ctx context.Context, rut string, status string) error
+	DeleteUser(ctx context.Context, rut string) error
 }
 
 // PostgresRepository implementa RepositoryInterface sobre PostgreSQL 16
@@ -144,7 +146,11 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, user models.UserRBA
 	query := `
 		INSERT INTO users_rbac (student_id, rut, full_name, email, role, career, campus_id, enrollment_status)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (rut) DO UPDATE SET full_name = EXCLUDED.full_name, career = EXCLUDED.career;
+		ON CONFLICT (rut) DO UPDATE SET 
+			full_name = EXCLUDED.full_name, 
+			career = EXCLUDED.career,
+			campus_id = EXCLUDED.campus_id,
+			enrollment_status = EXCLUDED.enrollment_status;
 	`
 	_, err := r.pool.Exec(ctx, query, user.StudentID, user.RUT, user.FullName, user.Email, user.Role, user.Career, user.Campus, user.EnrollmentStatus)
 	return err
@@ -181,6 +187,20 @@ func (r *PostgresRepository) GetAllUsers(ctx context.Context) ([]models.UserRBAC
 		}
 	}
 	return users, nil
+}
+
+func (r *PostgresRepository) UpdateUserStatus(ctx context.Context, rut string, status string) error {
+	clean := cleanRUT(rut)
+	query := "UPDATE users_rbac SET enrollment_status = $1 WHERE REPLACE(REPLACE(rut, '.', ''), '-', '') = $2;"
+	_, err := r.pool.Exec(ctx, query, status, clean)
+	return err
+}
+
+func (r *PostgresRepository) DeleteUser(ctx context.Context, rut string) error {
+	clean := cleanRUT(rut)
+	query := "DELETE FROM users_rbac WHERE REPLACE(REPLACE(rut, '.', ''), '-', '') = $1;"
+	_, err := r.pool.Exec(ctx, query, clean)
+	return err
 }
 
 // ============================================================================
@@ -238,6 +258,26 @@ func (m *InMemoryRepository) GetAllUsers(ctx context.Context) ([]models.UserRBAC
 		list = append(list, u)
 	}
 	return list, nil
+}
+
+func (m *InMemoryRepository) UpdateUserStatus(ctx context.Context, rut string, status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clean := cleanRUT(rut)
+	if u, ok := m.users[clean]; ok {
+		u.EnrollmentStatus = status
+		m.users[clean] = u
+		return nil
+	}
+	return fmt.Errorf("usuario no encontrado")
+}
+
+func (m *InMemoryRepository) DeleteUser(ctx context.Context, rut string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clean := cleanRUT(rut)
+	delete(m.users, clean)
+	return nil
 }
 
 func cleanRUT(rut string) string {

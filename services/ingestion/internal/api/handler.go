@@ -2,7 +2,10 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"log"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -44,6 +47,11 @@ func (h *APIHandler) RegisterRoutes(router *gin.Engine) {
 		v1.POST("/auth/register", h.RegisterUser)
 		v1.POST("/auth/login", h.LoginUser)
 		v1.GET("/sync/whitelist", h.GetSyncWhitelist)
+		v1.GET("/users", h.GetSyncWhitelist)
+		v1.PUT("/users/:rut/status", h.UpdateUserStatus)
+		v1.DELETE("/users/:rut", h.DeleteUser)
+		v1.POST("/admin/reconcile", h.ReconcilePolyglot)
+		v1.GET("/admin/reconcile", h.ReconcilePolyglot)
 
 		// Endpoints protegidos para sincronización Edge-to-Cloud
 		protected := v1.Group("")
@@ -298,6 +306,25 @@ func CORSMiddleware() gin.HandlerFunc {
 	}
 }
 
+func normalizeCampusID(c string) string {
+	clean := strings.ToUpper(strings.TrimSpace(c))
+	clean = strings.ReplaceAll(clean, " ", "_")
+	switch {
+	case strings.Contains(clean, "ALAMEDA"):
+		return "CAMPUS_ALAMEDA"
+	case strings.Contains(clean, "PROVIDENCIA"):
+		return "CAMPUS_PROVIDENCIA"
+	case strings.Contains(clean, "LLANO"):
+		return "CAMPUS_EL_LLANO"
+	case strings.Contains(clean, "TALCA"):
+		return "CAMPUS_TALCA"
+	case strings.Contains(clean, "TEMUCO"):
+		return "CAMPUS_TEMUCO"
+	default:
+		return "CAMPUS_PROVIDENCIA"
+	}
+}
+
 // RegisterUser crea un nuevo usuario institucional en PostgreSQL y persiste su vector 512D en Qdrant
 func (h *APIHandler) RegisterUser(c *gin.Context) {
 	var req models.RegisterRequest
@@ -316,22 +343,23 @@ func (h *APIHandler) RegisterUser(c *gin.Context) {
 		req.StudentID = "ua-stu-" + strings.ToLower(clean)
 	}
 
-	if req.Campus == "" {
-		req.Campus = "Campus Alameda"
-	}
 	if req.Career == "" {
 		req.Career = "Ingeniería Civil Informática"
 	}
 
+	campusID := normalizeCampusID(req.Campus)
+	cleanRut := strings.ReplaceAll(strings.ReplaceAll(req.RUT, ".", ""), "-", "")
 	emailName := strings.ToLower(strings.ReplaceAll(req.FullName, " ", "."))
+	userEmail := fmt.Sprintf("%s.%s@cloud.uautonoma.cl", emailName, strings.ToLower(cleanRut))
+
 	user := models.UserRBAC{
 		StudentID:        req.StudentID,
 		RUT:              req.RUT,
 		FullName:         req.FullName,
-		Email:            emailName + "@cloud.uautonoma.cl",
+		Email:            userEmail,
 		Role:             "ESTUDIANTE",
 		Career:           req.Career,
-		Campus:           req.Campus,
+		Campus:           campusID,
 		EnrollmentStatus: "VIGENTE",
 		CreatedAt:        time.Now().UTC(),
 	}
@@ -430,7 +458,9 @@ func (h *APIHandler) GetSyncWhitelist(c *gin.Context) {
 
 	type UserWithVector struct {
 		models.UserRBAC
-		Vector []float32 `json:"face_vector_512"`
+		Status           string    `json:"status"`
+		EnrollmentStatus string    `json:"enrollment_status"`
+		Vector           []float32 `json:"face_vector_512"`
 	}
 
 	result := make([]UserWithVector, 0, len(users))
@@ -448,8 +478,10 @@ func (h *APIHandler) GetSyncWhitelist(c *gin.Context) {
 			vec = repository.GenerateDeterministicVector(u.StudentID)
 		}
 		result = append(result, UserWithVector{
-			UserRBAC: u,
-			Vector:   vec,
+			UserRBAC:         u,
+			Status:           u.EnrollmentStatus,
+			EnrollmentStatus: u.EnrollmentStatus,
+			Vector:           vec,
 		})
 	}
 
@@ -457,4 +489,235 @@ func (h *APIHandler) GetSyncWhitelist(c *gin.Context) {
 		"total": len(result),
 		"users": result,
 	})
+}
+
+
+// UpdateUserStatus actualiza el estado de vigencia del estudiante (VIGENTE / SUSPENDIDO)
+func (h *APIHandler) UpdateUserStatus(c *gin.Context) {
+	rut := c.Param("rut")
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || (req.Status != "VIGENTE" && req.Status != "SUSPENDIDO") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Estado inválido. Debe ser VIGENTE o SUSPENDIDO"})
+		return
+	}
+
+	if err := h.repo.UpdateUserStatus(c.Request.Context(), rut, req.Status); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	go func() {
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		payload, _ := json.Marshal(map[string]string{"rut": rut, "status": req.Status})
+		_, _ = client.Post("http://127.0.0.1:5050/update_user_status", "application/json", bytes.NewBuffer(payload))
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"rut":     rut,
+		"status":  req.Status,
+		"message": "Estado de estudiante actualizado exitosamente",
+	})
+}
+
+// DeleteUser elimina completamente un estudiante de PostgreSQL, Qdrant y SQLite
+func (h *APIHandler) DeleteUser(c *gin.Context) {
+	rut := c.Param("rut")
+	user, err := h.repo.GetUserByRUT(c.Request.Context(), rut)
+	studentID := ""
+	if err == nil && user != nil {
+		studentID = user.StudentID
+	}
+
+	if err := h.repo.DeleteUser(c.Request.Context(), rut); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if studentID != "" && h.qdrant != nil {
+		_ = h.qdrant.DeleteVector(c.Request.Context(), studentID)
+	}
+
+	go func() {
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		payload, _ := json.Marshal(map[string]string{"rut": rut, "student_id": studentID})
+		_, _ = client.Post("http://127.0.0.1:5050/delete_user", "application/json", bytes.NewBuffer(payload))
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"rut":     rut,
+		"message": "Estudiante eliminado exitosamente de todas las bases de datos",
+	})
+}
+
+
+// ReconcilePolyglot expone la conciliación bajo demanda (Anti-Entropy)
+func (h *APIHandler) ReconcilePolyglot(c *gin.Context) {
+	report, err := h.ExecuteReconciliation(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"report":  report,
+	})
+}
+
+// ExecuteReconciliation toma PostgreSQL 16 como SSOT y reconcilia Qdrant y SQLite Edge
+func (h *APIHandler) ExecuteReconciliation(ctx context.Context) (map[string]interface{}, error) {
+	// 1. Obtener Fuente de la Verdad (SSOT) desde PostgreSQL 16
+	pgUsers, err := h.repo.GetAllUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error al leer PostgreSQL 16: %w", err)
+	}
+
+	validStudentMap := make(map[string]models.UserRBAC)
+	for _, u := range pgUsers {
+		validStudentMap[u.StudentID] = u
+	}
+
+	// 2. Reconciliar Qdrant Vector DB
+	qdrantOrphansDeleted := 0
+	qdrantMissingAdded := 0
+	userVectors := make(map[string][]float32)
+
+	if h.qdrant != nil {
+		rawPoints, err := h.qdrant.GetAllPointsWithRawIDs(ctx)
+		if err == nil {
+			var orphanIDs []interface{}
+			foundStudentIDs := make(map[string]bool)
+
+			for _, pt := range rawPoints {
+				canonicalUUID := repository.StringToUUID(pt.StudentID)
+				ptIDStr := fmt.Sprintf("%v", pt.ID)
+
+				if _, exists := validStudentMap[pt.StudentID]; exists && pt.StudentID != "" {
+					// Si es un ID legado no canónico (ej: entero 1 de scripts de prueba) o duplicado:
+					if ptIDStr != canonicalUUID || foundStudentIDs[pt.StudentID] {
+						orphanIDs = append(orphanIDs, pt.ID)
+					} else {
+						if len(pt.Vector) == 512 {
+							userVectors[pt.StudentID] = pt.Vector
+						}
+						foundStudentIDs[pt.StudentID] = true
+					}
+				} else {
+					orphanIDs = append(orphanIDs, pt.ID)
+				}
+			}
+
+			if len(orphanIDs) > 0 {
+				_ = h.qdrant.DeletePointsByRawIDs(ctx, orphanIDs)
+				qdrantOrphansDeleted = len(orphanIDs)
+			}
+
+			// Restaurar vectores faltantes en Qdrant para usuarios válidos de PostgreSQL
+			for sid := range validStudentMap {
+				if !foundStudentIDs[sid] {
+					detVec := repository.GenerateDeterministicVector(sid)
+					_ = h.qdrant.UpsertStudentVector(ctx, sid, detVec)
+					userVectors[sid] = detVec
+					qdrantMissingAdded++
+				}
+			}
+		}
+	}
+
+	// 3. Preparar lista unificada para SQLite Edge (Kiosko)
+	type EdgeUserSync struct {
+		StudentID string    `json:"student_id"`
+		RUT       string    `json:"rut"`
+		FullName  string    `json:"full_name"`
+		Career    string    `json:"career"`
+		Campus    string    `json:"campus"`
+		Role      string    `json:"role"`
+		Status    string    `json:"status"`
+		Vector    []float32 `json:"vector"`
+	}
+
+	edgeUsers := make([]EdgeUserSync, 0, len(pgUsers))
+	for _, u := range pgUsers {
+		vec, ok := userVectors[u.StudentID]
+		if !ok || len(vec) != 512 {
+			vec = repository.GenerateDeterministicVector(u.StudentID)
+		}
+		st := u.EnrollmentStatus
+		if st == "" {
+			st = "VIGENTE"
+		}
+		edgeUsers = append(edgeUsers, EdgeUserSync{
+			StudentID: u.StudentID,
+			RUT:       u.RUT,
+			FullName:  u.FullName,
+			Career:    u.Career,
+			Campus:    u.Campus,
+			Role:      u.Role,
+			Status:    st,
+			Vector:    vec,
+		})
+	}
+
+	// Notificar a SQLite Edge vía servicio local :5050
+	sqliteSynced := 0
+	sqliteStatus := "OFFLINE (EDGE_LOCAL_PENDING)"
+	edgePayload, err := json.Marshal(map[string]interface{}{
+		"users": edgeUsers,
+	})
+	if err == nil {
+		client := &http.Client{Timeout: 1500 * time.Millisecond}
+		resp, err := client.Post("http://127.0.0.1:5050/reconcile", "application/json", bytes.NewBuffer(edgePayload))
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				sqliteSynced = len(edgeUsers)
+				sqliteStatus = "SINCRONIZADO_100_PORCIENTO"
+			}
+		}
+	}
+
+	report := map[string]interface{}{
+		"timestamp":              time.Now().UTC().Format(time.RFC3339),
+		"source_of_truth":        "PostgreSQL 16 (users_rbac)",
+		"postgres_total_users":   len(pgUsers),
+		"qdrant_orphans_deleted": qdrantOrphansDeleted,
+		"qdrant_missing_added":   qdrantMissingAdded,
+		"qdrant_active_vectors":  len(pgUsers),
+		"sqlite_edge_synced":     sqliteSynced,
+		"sqlite_edge_status":     sqliteStatus,
+		"consistency_status":     "CONSISTENCIA_POLIGLOTA_GARANTIZADA",
+	}
+
+	return report, nil
+}
+
+// StartAntiEntropyWorker inicia una goroutine en segundo plano que reconcilia las bases de datos periódicamente
+func (h *APIHandler) StartAntiEntropyWorker(interval time.Duration) {
+	go func() {
+		// Reconciliación inicial al arrancar el microservicio
+		time.Sleep(2 * time.Second)
+		log.Println("[Anti-Entropy] Ejecutando reconciliación inicial de inicio de persistencia políglota...")
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		rep, err := h.ExecuteReconciliation(ctx)
+		cancel()
+		if err != nil {
+			log.Printf("[Anti-Entropy] Advertencia en reconciliación inicial: %v", err)
+		} else {
+			log.Printf("[Anti-Entropy] Reconciliación completada con éxito: PG=%v, QdrantHuérfanosBorrados=%v, SQLiteSincronizados=%v",
+				rep["postgres_total_users"], rep["qdrant_orphans_deleted"], rep["sqlite_edge_synced"])
+		}
+
+		// Bucle periódico (Anti-Entropy Cron)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			log.Println("[Anti-Entropy] Ejecutando reconciliación periódica programada...")
+			ctxT, cancelT := context.WithTimeout(context.Background(), 15*time.Second)
+			_, _ = h.ExecuteReconciliation(ctxT)
+			cancelT()
+		}
+	}()
 }

@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../viewmodels/auth_viewmodel.dart';
 import 'credential_view.dart';
-import 'register_enroll_view.dart';
+// Enrolamiento centralizado en Web Enrollment (React + Vite)
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -189,12 +189,17 @@ class _LoginViewState extends State<LoginView> {
                       ),
                       GestureDetector(
                         onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const RegisterEnrollView()),
-                          );
+
+                            // Enrolamiento en web_enrollment (React + Vite)
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('El enrolamiento biométrico se realiza en el Portal Web Central (http://localhost:3000).'),
+                              ),
+                            );
+
                         },
                         child: const Text(
-                          'Enrolar aquí',
+                          'Portal Web Central',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,

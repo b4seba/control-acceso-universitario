@@ -69,6 +69,8 @@ func main() {
 
 	apiHandler := api.NewAPIHandler(pool, repo, qdrantClient)
 	apiHandler.RegisterRoutes(router)
+	// Iniciar reconciliador Anti-Entropy en segundo plano (cada 10 min + pasada inicial)
+	apiHandler.StartAntiEntropyWorker(10 * time.Minute)
 
 	srv := &http.Server{
 		Addr:         ":" + port,

@@ -99,6 +99,10 @@ class _KioskMainViewState extends State<KioskMainView>
               // 1. Cabecera Industrial del Kiosko Edge
               _buildIndustrialHeader(context, kioskVm, outboxWorker),
 
+              // Banner / Toast Reactivo de Diagnóstico 2FA
+              if (kioskVm.currentToast != null)
+                _buildDiagnosticToast(kioskVm.currentToast!),
+
               // 2. Visor Central y Halos Cromáticos de la FSM
               Expanded(
                 child: Center(
@@ -239,6 +243,64 @@ class _KioskMainViewState extends State<KioskMainView>
                 },
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticToast(KioskToast toast) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF070E1C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: toast.color, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: toast.color.withValues(alpha: 0.35),
+            blurRadius: 18,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: toast.color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(toast.icon, color: toast.color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  toast.title,
+                  style: TextStyle(
+                    color: toast.color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  toast.message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -391,10 +453,37 @@ class _KioskMainViewState extends State<KioskMainView>
           '${state.student.career} • RUT: ${state.student.rut}',
           style: const TextStyle(fontSize: 13, color: KioskTheme.haloFaceScanning),
         ),
-        const SizedBox(height: 8),
-        const Text(
-          'Comparando vector matemático contra base de datos local SQLite WAL (Zero-Trust)',
-          style: TextStyle(fontSize: 11, color: KioskTheme.textGrey),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: KioskTheme.haloFaceScanning.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: KioskTheme.haloFaceScanning),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: KioskTheme.haloFaceScanning,
+                ),
+              ),
+              SizedBox(width: 10),
+              Text(
+                'FACTOR 2: VALIDANDO ROSTRO CONTRA VECTOR 512D EN SQLITE...',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: KioskTheme.haloFaceScanning,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -412,6 +501,62 @@ class _KioskMainViewState extends State<KioskMainView>
           latencyMs: state.latencyMs,
         ),
         const SizedBox(height: 16),
+
+        // Card Destacada Central de Acceso Concedido
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: KioskTheme.haloGranted.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: KioskTheme.haloGranted, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: KioskTheme.haloGranted.withValues(alpha: 0.35),
+                blurRadius: 24,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: KioskTheme.haloGranted.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle_rounded, size: 28, color: KioskTheme.haloGranted),
+              ),
+              const SizedBox(width: 14),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'ACCESO AUTORIZADO • 2FA VALIDADO',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                      color: KioskTheme.haloGranted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${state.studentName ?? "Estudiante"} (${state.studentRut ?? ""}) • Torniquete Abierto',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
 
         // Cronómetro de Latencia Visible (SLA <= 500 ms)
         Container(
