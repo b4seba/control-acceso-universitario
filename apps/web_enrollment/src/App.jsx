@@ -68,6 +68,8 @@ export default function App() {
     };
   }, []);
 
+
+
   const checkBackendHealth = async () => {
     try {
       const res = await fetch('http://localhost:8080/api/v1/health', { method: 'GET' });
@@ -125,6 +127,10 @@ export default function App() {
     try {
       const vec = await extract512DVectorFromVideo(videoRef.current);
       setVector512(vec);
+      setActionFeedback({
+        type: 'success',
+        message: 'Vector biométrico 512D extraído exitosamente mediante MobileFaceNet.',
+      });
     } catch (err) {
       console.error('Error extrayendo vector con MobileFaceNet:', err);
       setIsExtracting(false);
@@ -543,8 +549,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Pantalla del Visor */}
-            <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border-2 border-slate-800 flex items-center justify-center group shadow-inner">
+            {/* Pantalla del Visor con Encuadre Biométrico Estandarizado (4:5) */}
+            <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-black border-2 border-slate-800 flex items-center justify-center shadow-inner">
               <video
                 ref={videoRef}
                 autoPlay
@@ -554,6 +560,32 @@ export default function App() {
                   isCameraActive ? 'block' : 'hidden'
                 }`}
               />
+
+              {/* Guía de Encuadre Biométrico Estandarizado (No invasiva) */}
+              {isCameraActive && (
+                <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+                  <svg className="w-full h-full absolute inset-0" viewBox="0 0 640 360" preserveAspectRatio="none">
+                    <defs>
+                      <mask id="faceSilhouetteMask">
+                        <rect width="640" height="360" fill="white" />
+                        <ellipse cx="320" cy="165" rx="105" ry="135" fill="black" />
+                      </mask>
+                    </defs>
+                    {/* Sombreado perimetral suave fuera del óvalo para concentrar la atención */}
+                    <rect width="640" height="360" fill="rgba(0, 0, 0, 0.3)" mask="url(#faceSilhouetteMask)" />
+                    {/* Borde sutil del óvalo normalizado */}
+                    <ellipse cx="320" cy="165" rx="105" ry="135" fill="none" stroke="rgba(6, 182, 212, 0.45)" strokeWidth="2" strokeDasharray="6 4" />
+                    {/* Marcas de altura de ojos */}
+                    <line x1="200" y1="145" x2="225" y2="145" stroke="rgba(6, 182, 212, 0.6)" strokeWidth="1.5" />
+                    <line x1="415" y1="145" x2="440" y2="145" stroke="rgba(6, 182, 212, 0.6)" strokeWidth="1.5" />
+                  </svg>
+
+                  {/* Píldora de instrucción de encuadre */}
+                  <div className="absolute bottom-3 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur border border-slate-700/60 text-[10px] text-slate-300 font-medium">
+                    Alinea tu rostro dentro del óvalo guía
+                  </div>
+                </div>
+              )}
 
               {!isCameraActive && (
                 <div className="text-center p-6 flex flex-col items-center">
@@ -571,29 +603,6 @@ export default function App() {
                   >
                     <Camera className="w-3.5 h-3.5" /> Activar Cámara Web
                   </button>
-                </div>
-              )}
-
-              {/* Retícula Biométrica HUD Overlay */}
-              {isCameraActive && (
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-cyan-400" />
-                  <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-cyan-400" />
-                  <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-cyan-400" />
-                  <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-cyan-400" />
-
-                  {/* Guía Ovalada Central para el Rostro */}
-                  <div className="w-48 h-64 rounded-[50%] border-2 border-dashed border-cyan-400/60 shadow-[0_0_20px_rgba(0,240,255,0.2)]" />
-
-                  {/* Línea de Escaneo Animada */}
-                  <div className="absolute inset-x-8 top-12 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse" />
-
-                  {/* Badge de Seguridad Zero-Trust */}
-                  <div className="absolute bottom-3 left-4 right-4 text-center">
-                    <span className="text-[10px] font-mono tracking-wider px-3 py-1 rounded bg-black/75 text-slate-300 border border-slate-700/80">
-                      EXTRAER VECTOR 512D • ZERO-TRUST BIOMETRICS
-                    </span>
-                  </div>
                 </div>
               )}
             </div>

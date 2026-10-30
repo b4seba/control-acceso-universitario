@@ -23,9 +23,28 @@ if sys.platform == "win32":
 import cv2
 import numpy as np
 
+# Silenciar advertencias de drivers y stream negotiation de OpenCV en Windows
+os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
+os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+try:
+    cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+except Exception:
+    pass
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(PROJECT_ROOT, "ua_turnstile_edge.db")
 CASCADE_PATH = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+YUNET_PATH = os.path.join(PROJECT_ROOT, "scripts", "models", "face_detection_yunet_2023mar.onnx")
+
+yunet_detector = None
+if hasattr(cv2, 'FaceDetectorYN') and os.path.exists(YUNET_PATH):
+    try:
+        yunet_detector = cv2.FaceDetectorYN.create(
+            YUNET_PATH, "", (640, 480), score_threshold=0.5, nms_threshold=0.3
+        )
+        print(f"[+] Detector YuNet ONNX cargado exitosamente: {YUNET_PATH}")
+    except Exception as e:
+        print(f"[!] Error inicializando YuNet: {e}")
 # Inicialización de Modelo MobileFaceNet 512D en OpenCV DNN
 CANDIDATE_MODEL_PATHS = [
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "mobilefacenet.onnx"),
@@ -72,33 +91,51 @@ current_status = {
 status_lock = threading.Lock()
 frame_lock = threading.Lock()
 vector_lock = threading.Lock()
+raw_frame_lock = threading.Lock()
 latest_live_vector = None
+latest_raw_frame = None
 
 def extract_512d_vector(face_img):
     """
-    Inferencia de MobileFaceNet 512D usando OpenCV DNN.
+    Inferencia de MobileFaceNet 512D con Flip-Fusion usando OpenCV DNN.
     Preprocesamiento idéntico al de vectorExtractor.js (Web):
     - Escala a 112x112
-    - Normalización (pixel - 127.5) / 128.0
-    - Tensor NCHW [1, 3, 112, 112] con swapRB=True (BGR a RGB)
-    - Vector unitario con norma L2 = 1.0
+    - Valores de píxel crudos [0, 255] (la red tiene Sub(127.5) y Mul(1/128.0) internos)
+    - Pasa recorte directo y espejado horizontalmente (Flip-Fusion)
+    - Fusión vectorial: v_fused = v1 + v2
+    - Normalización Euclidiana L2 = 1.0 (Invariante a orientación y asimetrías)
     """
     if face_img is None or face_img.size == 0 or net is None:
         return np.zeros(512, dtype=np.float32)
 
     try:
-        blob = cv2.dnn.blobFromImage(
+        # Inferencia 1: Recorte directo
+        blob1 = cv2.dnn.blobFromImage(
             face_img,
-            scalefactor=1.0 / 128.0,
+            scalefactor=1.0,
             size=(112, 112),
-            mean=(127.5, 127.5, 127.5),
+            mean=(0, 0, 0),
             swapRB=True,
             crop=False
         )
-        net.setInput(blob)
-        output = net.forward()
-        vec = output.flatten().astype(np.float32)
+        net.setInput(blob1)
+        v1 = net.forward().flatten().astype(np.float32)
 
+        # Inferencia 2: Recorte espejado horizontalmente (Flip-Fusion)
+        face_flipped = cv2.flip(face_img, 1)
+        blob2 = cv2.dnn.blobFromImage(
+            face_flipped,
+            scalefactor=1.0,
+            size=(112, 112),
+            mean=(0, 0, 0),
+            swapRB=True,
+            crop=False
+        )
+        net.setInput(blob2)
+        v2 = net.forward().flatten().astype(np.float32)
+
+        # Fusión y normalización L2
+        vec = v1 + v2
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
@@ -107,7 +144,7 @@ def extract_512d_vector(face_img):
 
         return vec
     except Exception as e:
-        print(f"[!] Error en inferencia MobileFaceNet: {e}")
+        print(f"[!] Error en inferencia MobileFaceNet con Flip-Fusion: {e}")
         return np.zeros(512, dtype=np.float32)
 
 def load_enrolled_students():
@@ -154,7 +191,21 @@ def record_outbox(student_id, rut, result, reason, latency_ms):
         print("[!] Error outbox:", e)
 
 def open_camera():
-    # En Windows, intentar primero el backend estándar/MSMF para evitar bloqueos
+    # En Windows, DirectShow (CAP_DSHOW) es nativo, más rápido y no genera advertencias de stream MSMF
+    if sys.platform == "win32":
+        for idx in [0, 1]:
+            try:
+                cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                if cap.isOpened():
+                    ret, test_f = cap.read()
+                    if ret and test_f is not None and test_f.size > 0:
+                        print(f"[+] Cámara web conectada exitosamente en índice {idx} (DirectShow).")
+                        return cap
+                    cap.release()
+            except Exception:
+                pass
+
+    # Fallback para Linux/macOS o si DirectShow no está disponible
     for idx in [0, 1]:
         try:
             cap = cv2.VideoCapture(idx)
@@ -166,27 +217,129 @@ def open_camera():
                 cap.release()
         except Exception:
             pass
-
-    # Si falló, intentar con DirectShow en Windows
-    if sys.platform == "win32":
-        for idx in [0, 1]:
-            try:
-                cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-                if cap.isOpened():
-                    ret, test_f = cap.read()
-                    if ret and test_f is not None and test_f.size > 0:
-                        print(f"[+] Cámara web conectada exitosamente en índice {idx} (DSHOW).")
-                        return cap
-                    cap.release()
-            except Exception:
-                pass
     return None
 
-def camera_loop():
-    global current_frame_jpeg, current_status
-    face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
+def biometric_ai_worker():
+    """
+    HILO ASÍNCRONO DE INFERENCIA BIOMÉTRICA (~4-5 Hz)
+    Doble estrategia: Detección Dinámica + Fallback Infalible al Encuadre 4:5 (Idéntico a Web).
+    Se ejecuta en segundo plano sin frenar el flujo continuo de video a 30 FPS.
+    """
+    global current_status, latest_live_vector
+    
+    face_cascade = None
+    if hasattr(cv2, 'CascadeClassifier') and os.path.exists(CASCADE_PATH):
+        try:
+            face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
+        except Exception:
+            face_cascade = None
+
     students = load_enrolled_students()
-    print(f"[+] Servicio de cámara cargó {len(students)} estudiantes desde SQLite.")
+    last_reload_time = time.time()
+    THRESHOLD = 0.65
+
+    while True:
+        frame = None
+        with raw_frame_lock:
+            if latest_raw_frame is not None:
+                frame = latest_raw_frame.copy()
+
+        if frame is None:
+            time.sleep(0.04)
+            continue
+
+        now = time.time()
+        # Recargar lista blanca de SQLite cada 4 segundos
+        if now - last_reload_time > 4.0:
+            students = load_enrolled_students()
+            last_reload_time = now
+
+        start_eval = time.time()
+        h, w = frame.shape[:2]
+
+        # 1. Definir Encuadre Biométrico Estandarizado 4:5 (Coincidente con el visor y la Web de Enrolamiento)
+        crop_h = int(min(h * 0.72, w * 0.9))
+        crop_w = int(crop_h * 0.8)
+        start_x = max(0, (w - crop_w) // 2)
+        start_y = max(0, int((h - crop_h) * 0.42))
+
+        # 2. Detección Facial Ligera con YuNet ONNX y Alineamiento Canónico ArcFace (5 Puntos)
+        face_detected = False
+        face_crop = None
+
+        if yunet_detector is not None:
+            try:
+                yunet_detector.setInputSize((w, h))
+                _, detected_faces = yunet_detector.detect(frame)
+                if detected_faces is not None and len(detected_faces) > 0:
+                    best_face = detected_faces[0]
+                    score = float(best_face[14])
+                    if score >= 0.45:
+                        face_detected = True
+                        # Puntos canónicos ArcFace en 112x112:
+                        # Ojo derecho (38.29, 51.70), Ojo izquierdo (73.53, 51.50), Nariz (56.03, 71.74)
+                        # Comisura der (41.55, 92.37), Comisura izq (70.73, 92.20)
+                        src_pts = np.array([
+                            [best_face[4], best_face[5]],
+                            [best_face[6], best_face[7]],
+                            [best_face[8], best_face[9]],
+                            [best_face[10], best_face[11]],
+                            [best_face[12], best_face[13]]
+                        ], dtype=np.float32)
+
+                        dst_pts = np.array([
+                            [38.2946, 51.6963],
+                            [73.5318, 51.5014],
+                            [56.0252, 71.7366],
+                            [41.5493, 92.3655],
+                            [70.7299, 92.2041]
+                        ], dtype=np.float32)
+
+                        M, _ = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.LMEDS)
+                        if M is not None:
+                            face_crop = cv2.warpAffine(frame, M, (112, 112), borderValue=0.0)
+            except Exception as e:
+                pass
+
+        # Fallback B: Si YuNet no detectó el rostro, usar encuadre 4:5 central estandarizado
+        if face_crop is None or face_crop.size == 0:
+            fallback_crop = frame[start_y:start_y + crop_h, start_x:start_x + crop_w]
+            if fallback_crop.size > 0 and np.std(fallback_crop) > 18:
+                face_crop = fallback_crop
+                face_detected = True
+
+        detected_state = "IDLE"
+        latency_ms = 0
+
+        if face_detected and face_crop is not None and face_crop.size > 0:
+            # Inferencia 512D con Flip-Fusion (Sensor Pasivo Puro para Verificación 1:1)
+            live_vec = extract_512d_vector(face_crop)
+            with vector_lock:
+                latest_live_vector = live_vec.tolist()
+            latency_ms = int((time.time() - start_eval) * 1000) + 10
+            detected_state = "FACE_DETECTED"
+        else:
+            with vector_lock:
+                latest_live_vector = None
+            detected_state = "IDLE"
+
+        with status_lock:
+            current_status = {
+                "state": detected_state,
+                "face_detected": face_detected,
+                "latency_ms": latency_ms if latency_ms > 0 else 30,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        # Cadencia asíncrona: ~5 evaluaciones por segundo (cada 200 ms)
+        time.sleep(0.18)
+
+def camera_loop():
+    """
+    HILO DE CAPTURA Y STREAMING EXCLUSIVO A 30 FPS CONSTANTES
+    Garantiza video 100% fluido en Kiosk App sin bloqueos por IA.
+    """
+    global current_frame_jpeg, latest_raw_frame
 
     print("[*] Iniciando sondeo de dispositivo de video...")
     cap = open_camera()
@@ -200,19 +353,23 @@ def camera_loop():
         time.sleep(2.0)
         cap = open_camera()
 
-    print("[+] Cámara web lista y activa para reconocimiento biométrico.")
-    THRESHOLD = 0.65
-    last_event_time = 0
-    last_reload_time = time.time()
+    try:
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 30)
+    except Exception:
+        pass
+
+    print("[+] Cámara web lista y activa para streaming continuo a 30 FPS.")
+
+    # Lanzar trabajador asíncrono de inferencia biométrica en segundo plano
+    ai_thread = threading.Thread(target=biometric_ai_worker, daemon=True)
+    ai_thread.start()
+    print("[+] Motor de inferencia biométrica asíncrona iniciado en hilo dedicado.")
+
     consecutive_failed_frames = 0
 
     while True:
-        now = time.time()
-        # Recargar lista blanca de SQLite cada 4 segundos para captar nuevos registros automáticamente
-        if now - last_reload_time > 4.0:
-            students = load_enrolled_students()
-            last_reload_time = now
-
         ret, frame = cap.read()
         if not ret or frame is None:
             consecutive_failed_frames += 1
@@ -226,87 +383,50 @@ def camera_loop():
                     time.sleep(2.0)
                     cap = open_camera()
                 consecutive_failed_frames = 0
-            time.sleep(0.03)
+            time.sleep(0.02)
             continue
 
         consecutive_failed_frames = 0
 
+        # Espejado horizontal
         frame = cv2.flip(frame, 1)
-        h, w = frame.shape[:2]
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray_eq = cv2.equalizeHist(gray)
-        faces = face_cascade.detectMultiScale(gray_eq, scaleFactor=1.1, minNeighbors=4, minSize=(50, 50))
 
-        now = time.time()
-        start_eval = time.time()
+        # Actualizar último frame crudo para el hilo de IA
+        with raw_frame_lock:
+            latest_raw_frame = frame
 
-        detected_state = "IDLE"
-        detected_student = None
-        best_sim = 0.0
-        latency_ms = 0
-
-        if len(faces) > 0:
-            fx, fy, fw, fh = faces[0]
-            face_crop = frame[fy:fy+fh, fx:fx+fw]
-            live_vec = extract_512d_vector(face_crop)
-            with vector_lock:
-                latest_live_vector = live_vec.tolist()
-            latency_ms = int((time.time() - start_eval) * 1000) + 75
-
-            # Similitud Coseno
-            for s in students:
-                sim = float(np.dot(live_vec, s["vector"]))
-                if sim > best_sim:
-                    best_sim = sim
-                    detected_student = s
-
-            if detected_student and best_sim >= THRESHOLD:
-                if detected_student["status"] == "VIGENTE":
-                    detected_state = "GRANTED"
-                    box_color = (16, 185, 129) # Verde
-                    label = f"ACCESO CONCEDIDO: {detected_student['name']} ({best_sim*100:.1f}%)"
-                    if now - last_event_time > 3.0:
-                        record_outbox(detected_student["student_id"], detected_student["rut"], "GRANTED", None, latency_ms)
-                        last_event_time = now
-                else:
-                    detected_state = "DENIED"
-                    box_color = (68, 68, 239) # Rojo
-                    label = f"ACCESO DENEGADO: {detected_student['name']} (SUSPENDIDO)"
-                    if now - last_event_time > 3.0:
-                        record_outbox(detected_student["student_id"], detected_student["rut"], "DENIED", "SUSPENDIDO", latency_ms)
-                        last_event_time = now
-            else:
-                detected_state = "DENIED"
-                box_color = (68, 68, 239) # Rojo
-                label = f"ACCESO DENEGADO: Rostro No Coincide ({best_sim*100:.1f}%)"
-                if now - last_event_time > 3.0:
-                    record_outbox("UNKNOWN", "UNKNOWN", "DENIED", "Biometria Divergente", latency_ms)
-                    last_event_time = now
-
-            # Stream limpio: No se superponen cajas ni texto en el video
-            pass
-
-        # Actualizar estado global
-        with status_lock:
-            current_status = {
-                "state": detected_state,
-                "face_detected": len(faces) > 0,
-                "student_id": detected_student["student_id"] if detected_student else "",
-                "name": detected_student["name"] if detected_student else "",
-                "rut": detected_student["rut"] if detected_student else "",
-                "score": round(best_sim, 4),
-                "latency_ms": latency_ms if latency_ms > 0 else 80,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-
-        # Encode JPEG
-        _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        # Codificación JPEG optimizada (calidad 60 genera ~25-30 KB para transferencia ultrarrápida)
+        _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
         with frame_lock:
             current_frame_jpeg = jpeg.tobytes()
 
-        time.sleep(0.02) # ~30 FPS
+        # ~30 FPS constantes (~30-33 ms)
+        time.sleep(0.025)
+
+class StreamingServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # Silenciar desconexiones normales de clientes (WinError 10054 / BrokenPipe)
+        exc_type, exc_val, _ = sys.exc_info()
+        if exc_type in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+            return
+        if isinstance(exc_val, OSError) and getattr(exc_val, 'winerror', None) in (10054, 10053):
+            return
+        super().handle_error(request, client_address)
 
 class StreamingHandler(BaseHTTPRequestHandler):
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
+            pass
+
+    def finish(self):
+        try:
+            super().finish()
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
+            pass
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -334,7 +454,9 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")
                 self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Connection", "close")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("Keep-Alive", "timeout=5, max=1000")
                 self.send_header("Content-Length", str(len(frame)))
                 self.end_headers()
                 self.wfile.write(frame)
@@ -475,12 +597,19 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 data = json.loads(body.decode('utf-8'))
                 rut = data.get("rut", "")
                 student_id = data.get("student_id", "")
+                clean_rut = rut.replace(".", "").replace("-", "").strip().upper()
 
                 conn = sqlite3.connect(DB_PATH)
                 cur = conn.cursor()
                 cur.execute("PRAGMA journal_mode = WAL;")
-                cur.execute("DELETE FROM whitelist_users WHERE rut = ? OR student_id = ?", (rut, student_id))
+                cur.execute("""
+                DELETE FROM whitelist_users 
+                WHERE rut = ? 
+                   OR student_id = ? 
+                   OR UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = ?
+                """, (rut, student_id, clean_rut))
                 conn.commit()
+                deleted_rows = cur.rowcount
                 conn.close()
 
                 resp = json.dumps({
@@ -568,7 +697,7 @@ def main():
     t = threading.Thread(target=camera_loop, daemon=True)
     t.start()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 5050), StreamingHandler)
+    server = StreamingServer(("127.0.0.1", 5050), StreamingHandler)
     print("[+] Servidor de streaming y telemetría activo en http://127.0.0.1:5050")
     print("    - Stream MJPEG:  http://127.0.0.1:5050/video_feed")
     print("    - Foto Snapshot: http://127.0.0.1:5050/snapshot")

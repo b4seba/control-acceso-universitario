@@ -22,7 +22,8 @@ import cv2
 import urllib.request
 
 # Carga de MobileFaceNet 512D con OpenCV DNN
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "mobilefacenet.onnx")
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+MODEL_PATH = os.path.join(MODELS_DIR, "mobilefacenet.onnx")
 if os.path.exists(MODEL_PATH):
     net = cv2.dnn.readNetFromONNX(MODEL_PATH)
     net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
@@ -30,22 +31,63 @@ if os.path.exists(MODEL_PATH):
 else:
     net = None
 
+YUNET_PATH = os.path.join(MODELS_DIR, "face_detection_yunet_2023mar.onnx")
+yunet_detector = None
+if hasattr(cv2, 'FaceDetectorYN') and os.path.exists(YUNET_PATH):
+    try:
+        yunet_detector = cv2.FaceDetectorYN.create(
+            YUNET_PATH, "", (640, 480), score_threshold=0.5, nms_threshold=0.3
+        )
+        print(f"[+] Detector YuNet ONNX cargado exitosamente: {YUNET_PATH}")
+    except Exception as e:
+        print(f"[!] Error cargando YuNet: {e}")
+
+def align_face_5points(frame, face_landmarks):
+    dst_pts = np.array([
+        [38.2946, 51.6963],
+        [73.5318, 51.5014],
+        [56.0252, 71.7366],
+        [41.5493, 92.3655],
+        [70.7299, 92.2041]
+    ], dtype=np.float32)
+
+    M, _ = cv2.estimateAffinePartial2D(face_landmarks, dst_pts, method=cv2.LMEDS)
+    if M is not None:
+        return cv2.warpAffine(frame, M, (112, 112), borderValue=0.0)
+    return None
+
 def extract_512d_vector(face_img):
-    """Extrae un vector biométrico de 512D usando MobileFaceNet en OpenCV DNN."""
+    """Extrae un vector biométrico de 512D con Flip-Fusion usando MobileFaceNet en OpenCV DNN."""
     if face_img is None or face_img.size == 0 or net is None:
         return [0.0] * 512
     try:
-        blob = cv2.dnn.blobFromImage(
+        # Inferencia 1: Recorte directo
+        blob1 = cv2.dnn.blobFromImage(
             face_img,
-            scalefactor=1.0 / 128.0,
+            scalefactor=1.0,
             size=(112, 112),
-            mean=(127.5, 127.5, 127.5),
+            mean=(0, 0, 0),
             swapRB=True,
             crop=False
         )
-        net.setInput(blob)
-        output = net.forward()
-        vec = output.flatten().astype(np.float32)
+        net.setInput(blob1)
+        v1 = net.forward().flatten().astype(np.float32)
+
+        # Inferencia 2: Recorte espejado horizontalmente (Flip-Fusion)
+        face_flipped = cv2.flip(face_img, 1)
+        blob2 = cv2.dnn.blobFromImage(
+            face_flipped,
+            scalefactor=1.0,
+            size=(112, 112),
+            mean=(0, 0, 0),
+            swapRB=True,
+            crop=False
+        )
+        net.setInput(blob2)
+        v2 = net.forward().flatten().astype(np.float32)
+
+        # Fusión y normalización L2
+        vec = v1 + v2
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
@@ -53,7 +95,7 @@ def extract_512d_vector(face_img):
             vec = np.zeros(512, dtype=np.float32)
         return [round(float(x), 5) for x in vec]
     except Exception as e:
-        print(f"[!] Error en inferencia MobileFaceNet: {e}")
+        print(f"[!] Error en inferencia MobileFaceNet con Flip-Fusion: {e}")
         return [0.0] * 512
 
 def save_to_sqlite(student_id, rut, full_name, career, campus, role, status, vector512):
@@ -126,7 +168,11 @@ def main():
             print("[ERROR] No se detectó ningún rostro en la fotografía.")
             return
         x, y, w, h = faces[0]
-        face_crop = img[y:y+h, x:x+w]
+        py = int(h * 0.12)
+        px = int(w * 0.08)
+        y1, y2 = max(0, y - py), min(img.shape[0], y + h + py)
+        x1, x2 = max(0, x - px), min(img.shape[1], x + w + px)
+        face_crop = img[y1:y2, x1:x2]
 
     # Caso 2: Captura en vivo mediante Webcam
     else:
@@ -150,16 +196,49 @@ def main():
             frame = cv2.flip(frame, 1)
             display = frame.copy()
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, 1.2, 5, minSize=(80, 80))
-
             target_face = None
-            for (x, y, w, h) in faces:
-                # Retícula biométrica verde
-                cv2.rectangle(display, (x, y), (x+w, y+h), (0, 255, 128), 2)
-                cv2.putText(display, "ROSTRO DETECTADO", (x, y-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 128), 2)
-                target_face = frame[y:y+h, x:x+w]
-                break
+            detected_with_yunet = False
+
+            if yunet_detector is not None:
+                yunet_detector.setInputSize((frame.shape[1], frame.shape[0]))
+                _, yn_faces = yunet_detector.detect(frame)
+                if yn_faces is not None and len(yn_faces) > 0:
+                    best_f = yn_faces[0]
+                    if float(best_f[14]) >= 0.45:
+                        x, y, w, h = map(int, best_f[0:4])
+                        cv2.rectangle(display, (x, y), (x+w, y+h), (0, 255, 128), 2)
+                        cv2.putText(display, f"YUNET ALINEADO ({(float(best_f[14])*100):.1f}%)", (x, y-10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 128), 2)
+
+                        # Puntos de landmarks
+                        pts = np.array([
+                            [best_f[4], best_f[5]],
+                            [best_f[6], best_f[7]],
+                            [best_f[8], best_f[9]],
+                            [best_f[10], best_f[11]],
+                            [best_f[12], best_f[13]]
+                        ], dtype=np.float32)
+
+                        for p in pts:
+                            cv2.circle(display, (int(p[0]), int(p[1])), 3, (0, 255, 255), -1)
+
+                        aligned = align_face_5points(frame, pts)
+                        if aligned is not None:
+                            target_face = aligned
+                            detected_with_yunet = True
+
+            if not detected_with_yunet:
+                faces = face_cascade.detectMultiScale(gray, 1.2, 5, minSize=(80, 80)) if face_cascade else []
+                for (x, y, w, h) in faces:
+                    cv2.rectangle(display, (x, y), (x+w, y+h), (0, 255, 128), 2)
+                    cv2.putText(display, "ROSTRO DETECTADO", (x, y-10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 128), 2)
+                    py = int(h * 0.12)
+                    px = int(w * 0.08)
+                    y1, y2 = max(0, y - py), min(frame.shape[0], y + h + py)
+                    x1, x2 = max(0, x - px), min(frame.shape[1], x + w + px)
+                    target_face = frame[y1:y2, x1:x2]
+                    break
 
             # Overlay instructivo
             elapsed = time.time() - start_time
