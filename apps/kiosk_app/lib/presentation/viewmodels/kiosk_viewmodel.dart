@@ -87,8 +87,29 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   TurnstileStateType get currentStateType => _currentState.type;
   bool get isLiveCameraEnabled => _liveCameraEnabled;
 
+  bool _liveFaceDetected = false;
+  String _liveMatchedName = '';
+  String _liveMatchedRut = '';
+  String _liveMatchedStudentId = '';
+  double _liveMatchedScore = 0.0;
+  String _liveCamState = 'IDLE';
+
+  bool get liveFaceDetected => _liveFaceDetected;
+  String get liveMatchedName => _liveMatchedName;
+  String get liveMatchedRut => _liveMatchedRut;
+  String get liveMatchedStudentId => _liveMatchedStudentId;
+  double get liveMatchedScore => _liveMatchedScore;
+  String get liveCamState => _liveCamState;
+
   void toggleLiveCamera() {
     _liveCameraEnabled = !_liveCameraEnabled;
+    if (!_liveCameraEnabled) {
+      _liveFaceDetected = false;
+      _liveMatchedName = '';
+      _liveMatchedRut = '';
+      _liveMatchedScore = 0.0;
+      _liveCamState = 'IDLE';
+    }
     notifyListeners();
   }
 
@@ -133,11 +154,6 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
 
       if (!_liveCameraEnabled) return;
 
-      // Solo procesar si el torniquete está esperando verificación de rostro (FACE_SCANNING)
-      if (_currentState.type != TurnstileStateType.faceScanning) {
-        return;
-      }
-
       try {
         final res = await _httpClient
             .get(Uri.parse('http://127.0.0.1:5050/status'))
@@ -148,8 +164,25 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
           final state = data['state'] as String? ?? 'IDLE';
           final studentId = data['student_id'] as String? ?? '';
           final latencyMs = (data['latency_ms'] as num?)?.toInt() ?? 80;
-          final score = (data['score'] as num?)?.toDouble() ?? 0.88;
+          final score = (data['score'] as num?)?.toDouble() ?? 0.0;
+          final bool faceDetected = data['face_detected'] == true;
+          final String name = data['name'] as String? ?? '';
+          final String rut = data['rut'] as String? ?? '';
           final simPercent = (score * 100).toStringAsFixed(1);
+
+          // Actualizar telemetría biométrica en vivo en cualquier estado
+          _liveFaceDetected = faceDetected;
+          _liveMatchedName = name;
+          _liveMatchedRut = rut;
+          _liveMatchedStudentId = studentId;
+          _liveMatchedScore = score;
+          _liveCamState = state;
+          notifyListeners();
+
+          // Transición de máquina de estados FSM solo si está en verificación (FACE_SCANNING)
+          if (_currentState.type != TurnstileStateType.faceScanning) {
+            return;
+          }
 
           if (state == 'GRANTED' && studentId.isNotEmpty) {
             final student = await database.findStudentByIdOrRut(studentId);

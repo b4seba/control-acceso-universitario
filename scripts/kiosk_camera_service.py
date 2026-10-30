@@ -26,6 +26,26 @@ import numpy as np
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(PROJECT_ROOT, "ua_turnstile_edge.db")
 CASCADE_PATH = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+# Inicialización de Modelo MobileFaceNet 512D en OpenCV DNN
+CANDIDATE_MODEL_PATHS = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "mobilefacenet.onnx"),
+    os.path.join(PROJECT_ROOT, "apps", "web_enrollment", "public", "models", "mobilefacenet.onnx"),
+]
+MODEL_PATH = None
+for p in CANDIDATE_MODEL_PATHS:
+    if os.path.exists(p):
+        MODEL_PATH = p
+        break
+
+if MODEL_PATH:
+    print(f"[*] Cargando red neuronal MobileFaceNet desde: {MODEL_PATH}")
+    net = cv2.dnn.readNetFromONNX(MODEL_PATH)
+    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+    print("[+] MobileFaceNet listo para inferencia facial 512D en Kiosko.")
+else:
+    print("[!] AVISO: No se encontró mobilefacenet.onnx en rutas candidatas.")
+    net = None
 
 def generate_placeholder_frame(msg="ESPERANDO DISPOSITIVO DE CÁMARA..."):
     img = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -55,46 +75,40 @@ vector_lock = threading.Lock()
 latest_live_vector = None
 
 def extract_512d_vector(face_img):
-    if len(face_img.shape) == 3:
-        gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = face_img
+    """
+    Inferencia de MobileFaceNet 512D usando OpenCV DNN.
+    Preprocesamiento idéntico al de vectorExtractor.js (Web):
+    - Escala a 112x112
+    - Normalización (pixel - 127.5) / 128.0
+    - Tensor NCHW [1, 3, 112, 112] con swapRB=True (BGR a RGB)
+    - Vector unitario con norma L2 = 1.0
+    """
+    if face_img is None or face_img.size == 0 or net is None:
+        return np.zeros(512, dtype=np.float32)
 
-    resized = cv2.resize(gray, (128, 128))
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    norm_img = clahe.apply(resized)
+    try:
+        blob = cv2.dnn.blobFromImage(
+            face_img,
+            scalefactor=1.0 / 128.0,
+            size=(112, 112),
+            mean=(127.5, 127.5, 127.5),
+            swapRB=True,
+            crop=False
+        )
+        net.setInput(blob)
+        output = net.forward()
+        vec = output.flatten().astype(np.float32)
 
-    # 1. Parche de apariencia normalizada (256D)
-    patch = cv2.resize(norm_img, (16, 16)).astype(np.float32).flatten()
-    p_norm = np.linalg.norm(patch)
-    if p_norm > 0:
-        patch = patch / p_norm
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
+        else:
+            vec = np.zeros(512, dtype=np.float32)
 
-    # 2. Rejilla espacial Sobel 8x8 (256D)
-    gx = cv2.Sobel(norm_img, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(norm_img, cv2.CV_32F, 0, 1, ksize=3)
-    mag, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
-
-    grad_feats = []
-    cell_size = 16
-    for i in range(8):
-        for j in range(8):
-            cell_mag = mag[i*cell_size:(i+1)*cell_size, j*cell_size:(j+1)*cell_size]
-            cell_ang = angle[i*cell_size:(i+1)*cell_size, j*cell_size:(j+1)*cell_size]
-            hist, _ = np.histogram(cell_ang, bins=4, range=(0, 360), weights=cell_mag)
-            grad_feats.extend(hist)
-
-    grad_vec = np.array(grad_feats, dtype=np.float32)
-    g_norm = np.linalg.norm(grad_vec)
-    if g_norm > 0:
-        grad_vec = grad_vec / g_norm
-
-    combined = np.concatenate([patch, grad_vec])
-    c_norm = np.linalg.norm(combined)
-    if c_norm > 0:
-        combined = combined / c_norm
-
-    return combined
+        return vec
+    except Exception as e:
+        print(f"[!] Error en inferencia MobileFaceNet: {e}")
+        return np.zeros(512, dtype=np.float32)
 
 def load_enrolled_students():
     students = []
@@ -220,7 +234,8 @@ def camera_loop():
         frame = cv2.flip(frame, 1)
         h, w = frame.shape[:2]
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.25, 5, minSize=(90, 90))
+        gray_eq = cv2.equalizeHist(gray)
+        faces = face_cascade.detectMultiScale(gray_eq, scaleFactor=1.1, minNeighbors=4, minSize=(50, 50))
 
         now = time.time()
         start_eval = time.time()
@@ -268,10 +283,8 @@ def camera_loop():
                     record_outbox("UNKNOWN", "UNKNOWN", "DENIED", "Biometria Divergente", latency_ms)
                     last_event_time = now
 
-            # Dibujar caja y texto en el frame
-            cv2.rectangle(frame, (fx, fy), (fx+fw, fy+fh), box_color, 3)
-            cv2.rectangle(frame, (fx, fy-35), (fx+fw, fy), box_color, -1)
-            cv2.putText(frame, label, (fx+5, fy-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+            # Stream limpio: No se superponen cajas ni texto en el video
+            pass
 
         # Actualizar estado global
         with status_lock:

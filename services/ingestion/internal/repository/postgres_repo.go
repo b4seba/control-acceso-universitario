@@ -213,24 +213,10 @@ type InMemoryRepository struct {
 }
 
 func NewInMemoryRepository() *InMemoryRepository {
-	repo := &InMemoryRepository{
+	return &InMemoryRepository{
 		records: make([]models.AccessAuditRecord, 0),
 		users:   make(map[string]models.UserRBAC),
 	}
-	// Seed Sebastián Freire como usuario real institucional
-	freire := models.UserRBAC{
-		StudentID:        "ua-stu-2026-001",
-		RUT:              "21.460.709-3",
-		FullName:         "Sebastián Freire",
-		Email:            "s.freire@cloud.uautonoma.cl",
-		Role:             "ESTUDIANTE",
-		Career:           "Ingeniería Civil Informática",
-		Campus:           "Campus Alameda",
-		EnrollmentStatus: "VIGENTE",
-		CreatedAt:        time.Now().UTC(),
-	}
-	repo.users[cleanRUT(freire.RUT)] = freire
-	return repo
 }
 
 func (m *InMemoryRepository) CreateUser(ctx context.Context, user models.UserRBAC) error {

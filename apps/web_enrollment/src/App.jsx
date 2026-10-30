@@ -22,7 +22,7 @@ import {
   Users,
   Fingerprint
 } from 'lucide-react';
-import { extract512DVectorFromVideo } from './utils/vectorExtractor';
+import { extract512DVectorFromVideo, initMobileFaceNet } from './utils/vectorExtractor';
 
 export default function App() {
   const [formData, setFormData] = useState({
@@ -61,6 +61,7 @@ export default function App() {
     checkBackendHealth();
     startCamera();
     fetchStudents();
+    initMobileFaceNet();
 
     return () => {
       stopCamera();
@@ -113,24 +114,24 @@ export default function App() {
     setIsCameraActive(false);
   };
 
-  const handleCaptureFace = () => {
+  const handleCaptureFace = async () => {
     if (!videoRef.current || !isCameraActive) {
       alert('Activa la cámara antes de capturar el rostro.');
       return;
     }
 
     setIsExtracting(true);
-    setTimeout(() => {
-      try {
-        const vec = extract512DVectorFromVideo(videoRef.current);
-        setVector512(vec);
-        setIsExtracting(false);
-      } catch (err) {
-        console.error('Error extrayendo vector:', err);
-        setIsExtracting(false);
-        alert('Error extrayendo vector 512D.');
-      }
-    }, 150);
+ 
+    try {
+      const vec = await extract512DVectorFromVideo(videoRef.current);
+      setVector512(vec);
+    } catch (err) {
+      console.error('Error extrayendo vector con MobileFaceNet:', err);
+      setIsExtracting(false);
+      alert('Error extrayendo vector biométrico.');
+    } finally {
+      setIsExtracting(false);
+    }
   };
 
   // ==========================================

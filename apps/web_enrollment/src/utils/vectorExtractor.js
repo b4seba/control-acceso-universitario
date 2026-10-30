@@ -1,123 +1,102 @@
-/**
- * Extractor Biométrico 512D en JavaScript (Cliente Web / Canvas)
- * Arquitectura Zero-Trust Biometrics
- * Convierte un cuadro de video en 512 números flotantes normalizados (L2 = 1.0)
- * y destruye la imagen cruda inmediatamente de la memoria.
- */
-export function extract512DVectorFromVideo(videoElement) {
+import * as ort from 'onnxruntime-web';
+
+// Cargar WebAssembly desde CDN coincidente con la versión instalada (1.31.1)
+ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/';
+ort.env.wasm.numThreads = 1;
+
+let session = null;
+let isInitializing = false;
+
+// Precargar sesión inferencia de MobileFaceNet en memoria
+export async function initMobileFaceNet() {
+  if (session) return session;
+  if (isInitializing) return;
+  isInitializing = true;
+
+  const startTime = performance.now();
+  console.log('[MobileFaceNet] Iniciando carga de modelo ONNX en WebAssembly...');
+
+  try {
+    session = await ort.InferenceSession.create('/models/mobilefacenet.onnx', {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    const elapsedMs = (performance.now() - startTime).toFixed(1);
+    console.log(`[MobileFaceNet] Modelo cargado exitosamente en WebAssembly en ${elapsedMs} ms`);
+  } catch (error) {
+    const elapsedMs = (performance.now() - startTime).toFixed(1);
+    console.error(`[MobileFaceNet] Error inicializando modelo ONNX tras ${elapsedMs} ms:`, error);
+  } finally {
+    isInitializing = false;
+  }
+  return session;
+}
+
+// Extraer vector 512D
+export async function extract512DVectorFromVideo(videoElement) {
+  if (!session) {
+    await initMobileFaceNet();
+    if (!session) {
+      throw new Error('El modelo MobileFaceNet no está inicializado');
+    }
+  }
+
+  // Recortar región facial y escalar a 112x112 (Estándar MobileFaceNet)
   const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
+  canvas.width = 112;
+  canvas.height = 112;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-  // 1. Dibujar y convertir a escala de grises
-  ctx.drawImage(videoElement, 0, 0, 128, 128);
-  const imgData = ctx.getImageData(0, 0, 128, 128);
-  const data = imgData.data;
+  const vWidth = videoElement.videoWidth || 640;
+  const vHeight = videoElement.videoHeight || 480;
+  const cropSize = Math.min(vWidth, vHeight) * 0.7;
+  const startX = (vWidth - cropSize) / 2;
+  const startY = (vHeight - cropSize) / 2;
 
-  const gray = new Float32Array(128 * 128);
-  for (let i = 0; i < 128 * 128; i++) {
-    const r = data[i * 4];
-    const g = data[i * 4 + 1];
-    const b = data[i * 4 + 2];
-    gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+  ctx.drawImage(videoElement, startX, startY, cropSize, cropSize, 0, 0, 112, 112);
+  const imgData = ctx.getImageData(0, 0, 112, 112).data;
+
+  // Preprocesamiento Tensor NCHW [1, 3, 112, 112]
+  // Normalización estándar: (pixel - 127.5) / 128.0 -> Rango [-1.0, 1.0]
+  const floatData = new Float32Array(1 * 3 * 112 * 112);
+  const totalPixels = 112 * 112;
+
+  for (let i = 0; i < totalPixels; i++) {
+    const r = imgData[i * 4];
+    const g = imgData[i * 4 + 1];
+    const b = imgData[i * 4 + 2];
+
+    floatData[i] = (r - 127.5) / 128.0;                    // R
+    floatData[totalPixels + i] = (g - 127.5) / 128.0;      // G
+    floatData[totalPixels * 2 + i] = (b - 127.5) / 128.0;  // B
   }
 
-  // 2. Parche de apariencia normalizada (16x16 = 256 dimensiones)
-  const patchCanvas = document.createElement('canvas');
-  patchCanvas.width = 16;
-  patchCanvas.height = 16;
-  const patchCtx = patchCanvas.getContext('2d', { willReadFrequently: true });
-  patchCtx.drawImage(canvas, 0, 0, 16, 16);
-  const patchData = patchCtx.getImageData(0, 0, 16, 16).data;
+  // Crear Tensor ONNX y ejecutar Inferencia
+  const inputTensor = new ort.Tensor('float32', floatData, [1, 3, 112, 112]);
+  const inputName = session.inputNames[0];
+  const feeds = { [inputName]: inputTensor };
 
-  const patch = new Float32Array(256);
-  let pSumSq = 0;
-  for (let i = 0; i < 256; i++) {
-    const val = 0.299 * patchData[i * 4] + 0.587 * patchData[i * 4 + 1] + 0.114 * patchData[i * 4 + 2];
-    patch[i] = val;
-    pSumSq += val * val;
-  }
-  const pNorm = Math.sqrt(pSumSq);
-  if (pNorm > 0) {
-    for (let i = 0; i < 256; i++) {
-      patch[i] /= pNorm;
-    }
-  }
+  const inferStart = performance.now();
+  const results = await session.run(feeds);
+  const inferMs = (performance.now() - inferStart).toFixed(1);
+  console.log(`[MobileFaceNet] Inferencia 512D completada en ${inferMs} ms`);
 
-  // 3. Rejilla espacial Sobel 8x8 con 4 bins de orientación (64 x 4 = 256 dimensiones)
-  const gradVec = new Float32Array(256);
-  const cellSize = 16;
+  // Obtener el vector de salida de 512 dimensiones
+  const outputName = session.outputNames[0];
+  const rawVector = results[outputName].data; // Float32Array de 512
 
-  for (let gy = 0; gy < 8; gy++) {
-    for (let gx = 0; gx < 8; gx++) {
-      const cellHist = [0, 0, 0, 0];
-
-      for (let y = gy * cellSize + 1; y < (gy + 1) * cellSize - 1; y++) {
-        for (let x = gx * cellSize + 1; x < (gx + 1) * cellSize - 1; x++) {
-          // Gradiente Sobel simple 3x3 aproximado
-          const dx =
-            -gray[(y - 1) * 128 + (x - 1)] + gray[(y - 1) * 128 + (x + 1)] -
-            2 * gray[y * 128 + (x - 1)] + 2 * gray[y * 128 + (x + 1)] -
-            gray[(y + 1) * 128 + (x - 1)] + gray[(y + 1) * 128 + (x + 1)];
-
-          const dy =
-            -gray[(y - 1) * 128 + (x - 1)] - 2 * gray[(y - 1) * 128 + x] - gray[(y - 1) * 128 + (x + 1)] +
-            gray[(y + 1) * 128 + (x - 1)] + 2 * gray[(y + 1) * 128 + x] + gray[(y + 1) * 128 + (x + 1)];
-
-          const mag = Math.sqrt(dx * dx + dy * dy);
-          let angle = Math.atan2(dy, dx) * (180 / Math.PI);
-          if (angle < 0) angle += 360;
-
-          // 4 bins: [0-90), [90-180), [180-270), [270-360)
-          const bin = Math.min(3, Math.floor(angle / 90));
-          cellHist[bin] += mag;
-        }
-      }
-
-      const cellIdx = (gy * 8 + gx) * 4;
-      gradVec[cellIdx] = cellHist[0];
-      gradVec[cellIdx + 1] = cellHist[1];
-      gradVec[cellIdx + 2] = cellHist[2];
-      gradVec[cellIdx + 3] = cellHist[3];
-    }
-  }
-
-  let gSumSq = 0;
-  for (let i = 0; i < 256; i++) {
-    gSumSq += gradVec[i] * gradVec[i];
-  }
-  const gNorm = Math.sqrt(gSumSq);
-  if (gNorm > 0) {
-    for (let i = 0; i < 256; i++) {
-      gradVec[i] /= gNorm;
-    }
-  }
-
-  // 4. Concatenar 256 + 256 = 512 dimensiones
-  const combined = new Float32Array(512);
-  combined.set(patch, 0);
-  combined.set(gradVec, 256);
-
-  let cSumSq = 0;
+  // Normalización Euclidiana (L2 = 1.0)
+  let sumSq = 0;
   for (let i = 0; i < 512; i++) {
-    cSumSq += combined[i] * combined[i];
+    sumSq += rawVector[i] * rawVector[i];
   }
-  const cNorm = Math.sqrt(cSumSq);
-  const result = [];
-  if (cNorm > 0) {
-    for (let i = 0; i < 512; i++) {
-      result.push(Number((combined[i] / cNorm).toFixed(5)));
-    }
-  } else {
-    for (let i = 0; i < 512; i++) {
-      result.push(0.0);
-    }
+  const norm = Math.sqrt(sumSq) || 1.0;
+  const normalizedVector = [];
+  for (let i = 0; i < 512; i++) {
+    normalizedVector.push(Number((rawVector[i] / norm).toFixed(5)));
   }
 
-  // Limpieza de memoria (Zero-Trust: Destruir canvas y buffers de imagen)
-  ctx.clearRect(0, 0, 128, 128);
-  patchCtx.clearRect(0, 0, 16, 16);
-
-  return result;
+  // Zero-Trust: Destruir buffers de imagen de la memoria RAM
+  ctx.clearRect(0, 0, 112, 112);
+  return normalizedVector;
 }

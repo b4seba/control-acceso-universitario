@@ -37,3 +37,12 @@ Thumbs.db
 docs/
 Contexto/
 ARQUITECTURA_EV2.md
+
+
+# Modelos de IA pesados (>100MB)
+*.onnx
+**/models/*.onnx
+# Bases de datos SQLite locales y temporales WAL
+*.db
+*.db-shm
+*.db-wal

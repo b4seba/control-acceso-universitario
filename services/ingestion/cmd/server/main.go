@@ -34,16 +34,29 @@ func main() {
 	}
 
 	// 1. Inicialización de Repositorio (PostgreSQL con fallback a InMemory)
+		// 1. Inicialización Resiliente de Repositorio (PostgreSQL 16 con Reintentos)
 	var repo repository.RepositoryInterface
-	pgRepo, err := repository.NewPostgresRepository(pgConnStr)
-	if err != nil {
-		log.Printf("[Repo] PostgreSQL no detectado en %s (%v). Activando InMemoryRepository con hash-chaining.", pgConnStr, err)
-		repo = repository.NewInMemoryRepository()
-	} else {
-		log.Printf("[Repo] Conectado exitosamente al pool de PostgreSQL 16.")
-		repo = pgRepo
+	var pgRepo *repository.PostgresRepository
+	var connErr error
+
+	maxRetries := 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		pgRepo, connErr = repository.NewPostgresRepository(pgConnStr)
+		if connErr == nil {
+			log.Printf("[Repo] Conectado exitosamente al pool de PostgreSQL 16 (Intento %d/%d).", attempt, maxRetries)
+			repo = pgRepo
+			break
+		}
+		log.Printf("[Repo] Esperando a PostgreSQL 16 (%v)... Reintentando %d/%d en 2 segundos.", connErr, attempt, maxRetries)
+		time.Sleep(2 * time.Second)
 	}
 
+	if repo == nil {
+		log.Printf("[Repo] AVISO: PostgreSQL 16 no respondió tras %d intentos. Activando InMemory temporal.", maxRetries)
+		inMem := repository.NewInMemoryRepository()
+		repo = inMem
+	}
+	
 	// 2. Inicialización de Qdrant Vector DB (Zero-Trust: solo vectores de 512D)
 	qdrantEndpoint := os.Getenv("QDRANT_URL")
 	if qdrantEndpoint == "" {

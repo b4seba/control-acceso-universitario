@@ -138,45 +138,7 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
           if (widget.showOverlayGuides && _isConnected)
             _buildBiometricHudOverlay(),
 
-          // 3. Indicador de Estado Superior (Badge de Cámara)
-          Positioned(
-            top: 10,
-            left: 10,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: _isConnected ? const Color(0xFF10B981) : Colors.red,
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _isConnected ? const Color(0xFF10B981) : Colors.red,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    _isConnected ? 'CAM EN VIVO (512D)' : 'CAM OFFLINE',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8,
-                      color: _isConnected ? const Color(0xFF10B981) : Colors.red,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+
         ],
       ),
     );

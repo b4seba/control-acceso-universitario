@@ -328,30 +328,22 @@ class _KioskMainViewState extends State<KioskMainView>
       mainAxisSize: MainAxisSize.min,
       children: [
         if (kioskVm.isLiveCameraEnabled)
-          const LiveCameraWidget(
-            width: 260,
-            height: 260,
-            haloColor: KioskTheme.haloIdle,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const LiveCameraWidget(
+                width: 250,
+                height: 250,
+                haloColor: KioskTheme.haloIdle,
+              ),
+              const SizedBox(width: 18),
+              _buildLiveFaceTelemetryPanel(kioskVm),
+            ],
           )
         else
-          Container(
-            width: 130,
-            height: 130,
-            decoration: BoxDecoration(
-              color: KioskTheme.haloIdle.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-              border: Border.all(color: KioskTheme.haloIdle, width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: KioskTheme.haloIdle.withValues(alpha: 0.3),
-                  blurRadius: 30,
-                ),
-              ],
-            ),
-            child: const Center(
-              child: Icon(Icons.nfc_rounded, size: 65, color: KioskTheme.haloIdle),
-            ),
-          ),
+          _buildCameraDisabledCard(kioskVm),
+
         const SizedBox(height: 16),
 
         // Bloque de Estado del Torniquete (CERRADO)
@@ -359,29 +351,325 @@ class _KioskMainViewState extends State<KioskMainView>
           isOpen: false,
           isCompact: false,
         ),
+      ],
+    );
+  }
 
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: kioskVm.toggleLiveCamera,
-          icon: Icon(
-            kioskVm.isLiveCameraEnabled ? Icons.nfc_rounded : Icons.videocam_rounded,
-            size: 16,
-            color: KioskTheme.haloIdle,
+  /// Panel lateral que informa en tiempo real detección facial y coincidencia con enrolados
+  Widget _buildLiveFaceTelemetryPanel(KioskViewModel kioskVm) {
+    final bool hasFace = kioskVm.liveFaceDetected;
+    final bool hasMatch = hasFace && kioskVm.liveMatchedName.isNotEmpty;
+    final double simPercent = (kioskVm.liveMatchedScore * 100).clamp(0.0, 100.0);
+
+    return Container(
+      width: 290,
+      height: 250,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: KioskTheme.industrialSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasMatch
+              ? KioskTheme.haloGranted
+              : (hasFace ? KioskTheme.haloFaceScanning : KioskTheme.industrialBorder),
+          width: hasMatch ? 2 : 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (hasMatch
+                    ? KioskTheme.haloGranted
+                    : (hasFace ? KioskTheme.haloFaceScanning : Colors.black))
+                .withValues(alpha: hasFace ? 0.25 : 0.4),
+            blurRadius: 16,
+            spreadRadius: 1,
           ),
-          label: Text(
-            kioskVm.isLiveCameraEnabled ? 'Modo Solo NFC / QR' : 'Activar Sensor Facial',
-            style: const TextStyle(
-              fontSize: 11,
-              color: KioskTheme.haloIdle,
-              fontWeight: FontWeight.bold,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // 1. Cabecera Telemetría
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: (hasFace ? KioskTheme.haloGranted : Colors.grey.shade800)
+                      .withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  Icons.fingerprint_rounded,
+                  size: 16,
+                  color: hasFace ? KioskTheme.haloGranted : KioskTheme.textGrey,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ESTADO BIOMÉTRICO (512D)',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.8,
+                        color: hasFace ? KioskTheme.haloFaceScanning : KioskTheme.textGrey,
+                      ),
+                    ),
+                    Text(
+                      'MobileFaceNet en Edge (:5050)',
+                      style: const TextStyle(fontSize: 9, color: KioskTheme.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: hasFace ? KioskTheme.haloGranted : Colors.grey.shade600,
+                  boxShadow: hasFace
+                      ? [
+                          BoxShadow(
+                            color: KioskTheme.haloGranted.withValues(alpha: 0.8),
+                            blurRadius: 6,
+                          )
+                        ]
+                      : null,
+                ),
+              ),
+            ],
+          ),
+
+          // 2. Indicador 1: ¿Rostro detectado?
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: (hasFace ? KioskTheme.haloFaceScanning : Colors.white)
+                  .withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: (hasFace ? KioskTheme.haloFaceScanning : KioskTheme.industrialBorder)
+                    .withValues(alpha: 0.5),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  hasFace ? Icons.face_unlock_rounded : Icons.face_rounded,
+                  size: 16,
+                  color: hasFace ? KioskTheme.haloFaceScanning : KioskTheme.textMuted,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  hasFace ? 'ROSTRO EN ENCUADRE' : 'BUSCANDO ROSTRO...',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: hasFace ? KioskTheme.haloFaceScanning : KioskTheme.textGrey,
+                  ),
+                ),
+              ],
             ),
           ),
-          style: OutlinedButton.styleFrom(
-            side: BorderSide(color: KioskTheme.haloIdle.withValues(alpha: 0.5)),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+
+          // 3. Indicador 2: Identidad y Match Vectorial
+          if (hasFace)
+            if (hasMatch)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: KioskTheme.haloGranted.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: KioskTheme.haloGranted.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.verified_user_rounded,
+                            size: 14, color: KioskTheme.haloGranted),
+                        SizedBox(width: 5),
+                        Text(
+                          'COINCIDENCIA ENROLADA',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                            color: KioskTheme.haloGranted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      kioskVm.liveMatchedName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: KioskTheme.textWhite,
+                      ),
+                    ),
+                    Text(
+                      'RUT: ${kioskVm.liveMatchedRut}  •  ${simPercent.toStringAsFixed(1)}% Similitud',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: KioskTheme.textGrey,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: KioskTheme.haloNfcReading.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: KioskTheme.haloNfcReading.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.help_outline_rounded,
+                            size: 14, color: KioskTheme.haloNfcReading),
+                        SizedBox(width: 5),
+                        Text(
+                          'ROSTRO NO ENROLADO',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                            color: KioskTheme.haloNfcReading,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Desconocido (${simPercent.toStringAsFixed(1)}% < 65% umbral)',
+                      style: const TextStyle(fontSize: 10, color: KioskTheme.textGrey),
+                    ),
+                  ],
+                ),
+              )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.info_outline_rounded, size: 14, color: KioskTheme.textMuted),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Sitúese frente a la cámara para identificar identidad.',
+                      style: TextStyle(fontSize: 10, color: KioskTheme.textGrey),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // 4. Botón Desactivar Cámara (sin matar proceso Python)
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: kioskVm.toggleLiveCamera,
+              icon: const Icon(Icons.videocam_off_rounded, size: 14, color: KioskTheme.haloDenied),
+              label: const Text(
+                'DESACTIVAR CÁMARA',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.6,
+                  color: KioskTheme.haloDenied,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: KioskTheme.haloDenied.withValues(alpha: 0.4)),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                backgroundColor: KioskTheme.haloDenied.withValues(alpha: 0.08),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  /// Tarjeta de reemplazo cuando la visualización de la cámara está en pausa
+  Widget _buildCameraDisabledCard(KioskViewModel kioskVm) {
+    return Container(
+      width: 440,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: KioskTheme.industrialSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: KioskTheme.industrialBorder, width: 1.5),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.videocam_off_rounded,
+              size: 36,
+              color: KioskTheme.textMuted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'VISOR DE CÁMARA EN REPOSO',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.0,
+              color: KioskTheme.textWhite,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'El motor biométrico MobileFaceNet sigue activo en segundo plano (:5050).\nPuede validar por QR/NFC o activar la cámara en cualquier momento.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: KioskTheme.textGrey, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          ElevatedButton.icon(
+            onPressed: kioskVm.toggleLiveCamera,
+            icon: const Icon(Icons.videocam_rounded, size: 16),
+            label: const Text(
+              'ACTIVAR CÁMARA EN VIVO',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: KioskTheme.haloGranted,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

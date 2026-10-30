@@ -21,47 +21,35 @@ if sys.platform == "win32":
 
 import cv2
 
+# Carga de MobileFaceNet 512D con OpenCV DNN
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "mobilefacenet.onnx")
+if os.path.exists(MODEL_PATH):
+    net = cv2.dnn.readNetFromONNX(MODEL_PATH)
+    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+else:
+    net = None
+
 def extract_512d_vector(face_img):
-    if len(face_img.shape) == 3:
-        gray = cv2.cvtColor(face_img, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = face_img
-
-    resized = cv2.resize(gray, (128, 128))
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    norm_img = clahe.apply(resized)
-
-    # 1. Parche de apariencia normalizada (16x16 = 256 dimensiones)
-    patch = cv2.resize(norm_img, (16, 16)).astype(np.float32).flatten()
-    p_norm = np.linalg.norm(patch)
-    if p_norm > 0:
-        patch = patch / p_norm
-
-    # 2. Rejilla espacial 8x8 con 4 bins de gradiente Sobel (256 dimensiones)
-    gx = cv2.Sobel(norm_img, cv2.CV_32F, 1, 0, ksize=3)
-    gy = cv2.Sobel(norm_img, cv2.CV_32F, 0, 1, ksize=3)
-    mag, angle = cv2.cartToPolar(gx, gy, angleInDegrees=True)
-
-    grad_feats = []
-    cell_size = 16
-    for i in range(8):
-        for j in range(8):
-            cell_mag = mag[i*cell_size:(i+1)*cell_size, j*cell_size:(j+1)*cell_size]
-            cell_ang = angle[i*cell_size:(i+1)*cell_size, j*cell_size:(j+1)*cell_size]
-            hist, _ = np.histogram(cell_ang, bins=4, range=(0, 360), weights=cell_mag)
-            grad_feats.extend(hist)
-
-    grad_vec = np.array(grad_feats, dtype=np.float32)
-    g_norm = np.linalg.norm(grad_vec)
-    if g_norm > 0:
-        grad_vec = grad_vec / g_norm
-
-    combined = np.concatenate([patch, grad_vec])
-    c_norm = np.linalg.norm(combined)
-    if c_norm > 0:
-        combined = combined / c_norm
-
-    return combined
+    if face_img is None or face_img.size == 0 or net is None:
+        return np.zeros(512, dtype=np.float32)
+    try:
+        blob = cv2.dnn.blobFromImage(
+            face_img,
+            scalefactor=1.0 / 128.0,
+            size=(112, 112),
+            mean=(127.5, 127.5, 127.5),
+            swapRB=True,
+            crop=False
+        )
+        net.setInput(blob)
+        output = net.forward()
+        vec = output.flatten().astype(np.float32)
+        norm = np.linalg.norm(vec)
+        return (vec / norm) if norm > 0 else np.zeros(512, dtype=np.float32)
+    except Exception as e:
+        print(f"[!] Error en inferencia: {e}")
+        return np.zeros(512, dtype=np.float32)
 
 def cosine_similarity(v1, v2):
     dot = np.dot(v1, v2)
