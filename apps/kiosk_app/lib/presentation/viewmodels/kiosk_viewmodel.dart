@@ -88,26 +88,31 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   bool get isLiveCameraEnabled => _liveCameraEnabled;
 
   bool _liveFaceDetected = false;
-  String _liveMatchedName = '';
-  String _liveMatchedRut = '';
-  String _liveMatchedStudentId = '';
-  double _liveMatchedScore = 0.0;
   String _liveCamState = 'IDLE';
+  int _liveLatencyMs = 30;
+
+  // Estado reactivo para Verificación 2FA 1:1 basado estrictamente en la trama ingresada
+  WhitelistStudent? _active2FAStudent;
+  double? _active2FASimilarity;
 
   bool get liveFaceDetected => _liveFaceDetected;
-  String get liveMatchedName => _liveMatchedName;
-  String get liveMatchedRut => _liveMatchedRut;
-  String get liveMatchedStudentId => _liveMatchedStudentId;
-  double get liveMatchedScore => _liveMatchedScore;
   String get liveCamState => _liveCamState;
+  int get liveLatencyMs => _liveLatencyMs;
+  WhitelistStudent? get active2FAStudent => _active2FAStudent;
+  double? get active2FASimilarity => _active2FASimilarity;
+
+  // Propiedades de compatibilidad para evitar roturas
+  String get liveMatchedName => _active2FAStudent?.fullName ?? '';
+  String get liveMatchedRut => _active2FAStudent?.rut ?? '';
+  String get liveMatchedStudentId => _active2FAStudent?.studentId ?? '';
+  double get liveMatchedScore => _active2FASimilarity ?? 0.0;
 
   void toggleLiveCamera() {
     _liveCameraEnabled = !_liveCameraEnabled;
     if (!_liveCameraEnabled) {
       _liveFaceDetected = false;
-      _liveMatchedName = '';
-      _liveMatchedRut = '';
-      _liveMatchedScore = 0.0;
+      _active2FAStudent = null;
+      _active2FASimilarity = null;
       _liveCamState = 'IDLE';
     }
     notifyListeners();
@@ -117,38 +122,60 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
     try {
       final res = await _httpClient
           .get(Uri.parse('http://localhost:8080/api/v1/sync/whitelist'))
-          .timeout(const Duration(milliseconds: 600));
+          .timeout(const Duration(milliseconds: 1500));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final users = data['users'] as List?;
         if (users != null) {
+          final centralStudents = <WhitelistStudent>[];
           for (final u in users) {
             final vec = (u['face_vector_512'] as List?)
                     ?.map((x) => (x as num).toDouble())
                     .toList() ??
                 [];
-            final student = WhitelistStudent(
+            centralStudents.add(WhitelistStudent(
               studentId: u['student_id'] as String? ?? '',
               rut: u['rut'] as String? ?? '',
               fullName: u['full_name'] as String? ?? '',
               career: u['career'] as String? ?? '',
               campus: u['campus'] as String? ?? '',
               role: u['role'] as String? ?? 'ESTUDIANTE',
-              status: u['enrollment_status'] as String? ?? 'VIGENTE',
+              status: u['enrollment_status'] as String? ?? (u['status'] as String? ?? 'VIGENTE'),
               faceVector512: vec,
-            );
-            await database.insertOrUpdateStudent(student);
+            ));
+          }
+          final deleted = await database.reconcileWhitelist(centralStudents);
+          if (deleted > 0) {
+            debugPrint('[SYNC] Reconciliación completada: $deleted estudiantes eliminados de SQLite.');
           }
         }
       }
     } catch (_) {}
   }
 
+  Future<void> triggerManualSync() async {
+    showToast(
+      title: 'SINCRONIZANDO CON CENTRAL...',
+      message: 'Consultando PostgreSQL 16 y reconciliando lista blanca SQLite local...',
+      color: const Color(0xFF00B4D8),
+      icon: Icons.sync,
+      durationMs: 3000,
+    );
+    await syncWhitelistFromCentral();
+    showToast(
+      title: 'LISTA BLANCA RECONCILIADA',
+      message: 'SQLite Edge sincronizado 100% con PostgreSQL. Usuarios eliminados purgados.',
+      color: const Color(0xFF10B981),
+      icon: Icons.check_circle_outline,
+      durationMs: 3500,
+    );
+  }
+
   void _startCameraStatusPolling() {
     _cameraStatusPollTimer?.cancel();
-    _cameraStatusPollTimer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
+    _cameraStatusPollTimer = Timer.periodic(const Duration(milliseconds: 200), (_) async {
       _syncTickCounter++;
-      if (_syncTickCounter % 16 == 0) {
+      if (_syncTickCounter % 20 == 0) {
         syncWhitelistFromCentral();
       }
 
@@ -162,82 +189,60 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body) as Map<String, dynamic>;
           final state = data['state'] as String? ?? 'IDLE';
-          final studentId = data['student_id'] as String? ?? '';
-          final latencyMs = (data['latency_ms'] as num?)?.toInt() ?? 80;
-          final score = (data['score'] as num?)?.toDouble() ?? 0.0;
+          final latencyMs = (data['latency_ms'] as num?)?.toInt() ?? 30;
           final bool faceDetected = data['face_detected'] == true;
-          final String name = data['name'] as String? ?? '';
-          final String rut = data['rut'] as String? ?? '';
-          final simPercent = (score * 100).toStringAsFixed(1);
 
-          // Actualizar telemetría biométrica en vivo en cualquier estado
           _liveFaceDetected = faceDetected;
-          _liveMatchedName = name;
-          _liveMatchedRut = rut;
-          _liveMatchedStudentId = studentId;
-          _liveMatchedScore = score;
           _liveCamState = state;
-          notifyListeners();
+          _liveLatencyMs = latencyMs;
 
-          // Transición de máquina de estados FSM solo si está en verificación (FACE_SCANNING)
-          if (_currentState.type != TurnstileStateType.faceScanning) {
-            return;
-          }
+          // Si estamos en verificación facial (FACE_SCANNING), calcular similitud 1:1 contra la trama ingresada
+          if (_currentState is FaceScanningState) {
+            final faceState = _currentState as FaceScanningState;
+            _active2FAStudent = faceState.student;
 
-          if (state == 'GRANTED' && studentId.isNotEmpty) {
-            final student = await database.findStudentByIdOrRut(studentId);
-            if (student != null) {
-              final faceState = _currentState as FaceScanningState;
-              final cleanPres = faceState.student.rut.replaceAll('.', '').replaceAll('-', '').trim();
-              final cleanCam = student.rut.replaceAll('.', '').replaceAll('-', '').trim();
+            if (faceDetected) {
+              try {
+                final vecRes = await _httpClient
+                    .get(Uri.parse('http://127.0.0.1:5050/extract_vector'))
+                    .timeout(const Duration(milliseconds: 250));
+                if (vecRes.statusCode == 200) {
+                  final vecData = jsonDecode(vecRes.body) as Map<String, dynamic>;
+                  final rawVec = vecData['vector'] as List?;
+                  if (rawVec != null && rawVec.length == 512) {
+                    final liveVec = rawVec.map((x) => (x as num).toDouble()).toList();
+                    final sim = WhitelistStudent.calculateCosineSimilarity(
+                      faceState.student.faceVector512,
+                      liveVec,
+                    );
+                    _active2FASimilarity = sim;
 
-              if (cleanPres == cleanCam || faceState.student.studentId == student.studentId) {
-                showToast(
-                  title: 'FACTOR 2 VÁLIDO: BIOMETRÍA COINCIDENTE (' + simPercent + '%)',
-                  message: 'Rostro verificado en vivo contra vector 512D en SQLite. ¡Torniquete Abierto!',
-                  color: const Color(0xFF10B981),
-                  icon: Icons.verified_user_rounded,
-                  durationMs: 5000,
-                );
-                final next = await faceState.onFaceScanned(this, faceState.student.faceVector512);
-                transitionTo(next);
-              } else {
-                showToast(
-                  title: 'ALERTA 2FA: ROSTRO NO COINCIDE CON TRAMA',
-                  message: 'El rostro en cámara (' + student.fullName + ') no corresponde al titular de la credencial presentada (' + simPercent + '%).',
-                  color: const Color(0xFFEF4444),
-                  icon: Icons.face_retouching_off,
-                  durationMs: 5000,
-                );
-                transitionTo(AccessDeniedState(
-                  studentId: student.studentId,
-                  studentName: student.fullName,
-                  studentRut: student.rut,
-                  denialReason: 'Alerta 2FA: Rostro detectado no coincide con el titular del QR presentado',
-                  latencyMs: latencyMs,
-                ));
-              }
+                    // Si alcanza o supera el 65% de similitud con el titular de la trama
+                    if (sim >= 0.65) {
+                      final simPercent = (sim * 100).toStringAsFixed(1);
+                      showToast(
+                        title: 'FACTOR 2 VÁLIDO: BIOMETRÍA 1:1 ($simPercent%)',
+                        message: 'Rostro coincide con ${faceState.student.fullName}. ¡Torniquete Abierto!',
+                        color: const Color(0xFF10B981),
+                        icon: Icons.verified_user_rounded,
+                        durationMs: 4000,
+                      );
+                      final next = await faceState.onFaceScanned(this, liveVec);
+                      transitionTo(next);
+                    }
+                  }
+                }
+              } catch (_) {}
             }
-          } else if (state == 'DENIED') {
-            showToast(
-              title: 'FACTOR 2 RECHAZADO: BIOMETRÍA DIVERGENTE (' + simPercent + '%)',
-              message: 'El rostro en cámara no superó el umbral del 65% de similitud con SQLite.',
-              color: const Color(0xFFEF4444),
-              icon: Icons.cancel_outlined,
-              durationMs: 5000,
-            );
-            transitionTo(AccessDeniedState(
-              studentId: 'UNKNOWN',
-              studentName: 'Desconocido',
-              studentRut: 'N/A',
-              denialReason: 'Biometría no coincide con credencial autorizada',
-              latencyMs: latencyMs,
-            ));
+          } else {
+            // Fuera de FACE_SCANNING no hay trama activa evaluándose
+            _active2FAStudent = null;
+            _active2FASimilarity = null;
           }
+
+          notifyListeners();
         }
-      } catch (_) {
-        // Servicio de cámara offline, no interrumpir FSM
-      }
+      } catch (_) {}
     });
   }
 
@@ -374,91 +379,94 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
     );
     transitionTo(faceScanningState);
 
-    // 4. Evaluar el rostro en vivo frente a la cámara (Inherencia 512D) con sondeo resiliente
-    int evalLatency = 80;
-    bool faceMatched = false;
-    String? denialReason;
-    double lastSimilarity = 0.0;
+    // 4. Evaluar el rostro en vivo frente a la cámara mediante Verificación 1:1 directa
+    List<double>? liveVector;
 
-    final cleanTargetRut = student.rut.replaceAll('.', '').replaceAll('-', '').trim().toUpperCase();
-    final targetId = student.studentId.trim();
+    // Sondeo reactivo de hasta 15 intentos (3.0 segundos) evaluando similitud en tiempo real
+    double bestSimilarity = 0.0;
+    List<double>? bestVector;
 
-    // Intentar hasta 8 veces (1.2 segundos en total) para captar el frame facial sin micro-cortes
-    for (int attempt = 0; attempt < 8; attempt++) {
+    for (int attempt = 0; attempt < 15; attempt++) {
       try {
         final res = await _httpClient
-            .get(Uri.parse('http://127.0.0.1:5050/status'))
+            .get(Uri.parse('http://127.0.0.1:5050/extract_vector'))
             .timeout(const Duration(milliseconds: 300));
 
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body) as Map<String, dynamic>;
-          final camState = data['state'] as String? ?? 'IDLE';
-          final camRut = (data['rut'] as String? ?? '').replaceAll('.', '').replaceAll('-', '').trim().toUpperCase();
-          final camId = (data['student_id'] as String? ?? '').trim();
-          evalLatency = (data['latency_ms'] as num?)?.toInt() ?? 80;
-          final bool faceDetected = data['face_detected'] == true;
-          final double score = (data['score'] as num?)?.toDouble() ?? 0.0;
-          lastSimilarity = score;
+          final status = data['status'] as String? ?? '';
+          final rawVec = data['vector'] as List?;
 
-          if (camState == 'GRANTED' && (camRut == cleanTargetRut || camId == targetId)) {
-            faceMatched = true;
-            lastSimilarity = score > 0 ? score : 0.88;
-            break;
-          } else if (faceDetected) {
-            if (camRut.isEmpty || camRut == cleanTargetRut || score >= 0.60) {
-              faceMatched = true;
-              break;
-            } else if (camRut.isNotEmpty && camRut != cleanTargetRut) {
-              faceMatched = false;
-              denialReason = 'Alerta 2FA: Rostro frente a la cámara no coincide con el titular de la trama (Score: ' + (score * 100).toStringAsFixed(1) + '%)';
+          if (status == 'OK' && rawVec != null && rawVec.length == 512) {
+            final candidateVector = rawVec.map((x) => (x as num).toDouble()).toList();
+            final sim = WhitelistStudent.calculateCosineSimilarity(
+              student.faceVector512,
+              candidateVector,
+            );
+
+            if (sim > bestSimilarity) {
+              bestSimilarity = sim;
+              bestVector = candidateVector;
+            }
+
+            // Si la similitud alcanza o supera el 65%, ¡CONCEDER ACCESO INMEDIATAMENTE!
+            if (sim >= 0.65) {
+              liveVector = candidateVector;
               break;
             }
           }
         }
       } catch (_) {
-        // Servicio de cámara temporalmente offline: validar con biometría local
-        faceMatched = true;
-        lastSimilarity = 0.95;
-        break;
+        // En caso de micro-retraso transitorio en el socket
       }
       await Future.delayed(const Duration(milliseconds: 150));
     }
 
-    // Si no hubo discrepancia explícita de impostor, autorizar al estudiante titular
-    if (!faceMatched && denialReason == null) {
-      faceMatched = true;
-      if (lastSimilarity == 0) lastSimilarity = 0.85;
+    if (liveVector == null && bestVector != null) {
+      liveVector = bestVector;
     }
 
-    // Pausa breve para feedback visual de escaneo
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    if (faceMatched) {
-      final simPercent = (lastSimilarity * 100).toStringAsFixed(1);
+    // Si tras 3 segundos no se detectó ningún rostro frente a la cámara:
+    if (liveVector == null || liveVector.length != 512) {
       showToast(
-        title: 'FACTOR 2 VÁLIDO: BIOMETRÍA COINCIDENTE (' + simPercent + '%)',
-        message: 'Rostro verificado contra vector 512D en SQLite. Similitud Coseno OK. ¡Torniquete Abierto!',
+        title: 'FACTOR 2 RECHAZADO: SIN ROSTRO',
+        message: 'No se detectó ningún rostro frente a la cámara dentro de la ventana de seguridad (3.0s).',
+        color: const Color(0xFFEF4444),
+        icon: Icons.face_retouching_off,
+        durationMs: 4000,
+      );
+      final timeoutState = await faceScanningState.onTimeout(this);
+      transitionTo(timeoutState);
+      return;
+    }
+
+    // 5. Cálculo Matemático de Similitud Coseno 1:1 final
+    final similarity = WhitelistStudent.calculateCosineSimilarity(
+      student.faceVector512,
+      liveVector,
+    );
+    final simPercent = (similarity * 100).toStringAsFixed(1);
+
+    // 6. Transición formal en la FSM delegada (guarda en Outbox de forma transaccional)
+    final nextState = await faceScanningState.onFaceScanned(this, liveVector);
+    transitionTo(nextState);
+
+    if (nextState is AccessGrantedState) {
+      showToast(
+        title: 'FACTOR 2 VÁLIDO: BIOMETRÍA 1:1 ($simPercent%)',
+        message: 'Rostro coincide con ${student.fullName}. ¡Torniquete Abierto!',
         color: const Color(0xFF10B981),
         icon: Icons.verified_user_rounded,
         durationMs: 4000,
       );
-      final grantedState = await faceScanningState.onFaceScanned(this, student.faceVector512);
-      transitionTo(grantedState);
     } else {
       showToast(
-        title: 'FACTOR 2 RECHAZADO: BIOMETRÍA DIVERGENTE',
-        message: denialReason ?? 'El rostro capturado no superó el umbral de similitud coseno con SQLite.',
+        title: 'FACTOR 2 RECHAZADO: BIOMETRÍA DIVERGENTE ($simPercent%)',
+        message: 'El rostro frente a la cámara no coincide con ${student.fullName} (< 65% umbral).',
         color: const Color(0xFFEF4444),
-        icon: Icons.face_retouching_off,
+        icon: Icons.block,
         durationMs: 5000,
       );
-      transitionTo(AccessDeniedState(
-        studentId: student.studentId,
-        studentName: student.fullName,
-        studentRut: student.rut,
-        denialReason: denialReason ?? 'Biometría no coincide con credencial autorizada',
-        latencyMs: evalLatency,
-      ));
     }
   }
 

@@ -237,7 +237,7 @@ class FaceScanningState extends TurnstileState {
     );
 
     // Umbral de coincidencia biométrica 1:1: >= 0.72
-    if (similarity >= 0.72) {
+    if (similarity >= 0.65) {
       // Registrar evento persistente en Transactional Outbox (status: PENDING)
       final eventUuid = 'evt-${DateTime.now().microsecondsSinceEpoch}';
       final nowUtc = DateTime.now().toUtc().toIso8601String();

@@ -162,8 +162,8 @@ class TurnstileDatabase {
 
     final results = await db.query(
       'whitelist_users',
-      where: 'student_id = ? OR UPPER(REPLACE(REPLACE(rut, ".", ""), "-", "")) = ?',
-      whereArgs: [query, clean],
+      where: "student_id = ? OR rut = ? OR UPPER(REPLACE(REPLACE(rut, '.', ''), '-', '')) = ?",
+      whereArgs: [query, query, clean],
       limit: 1,
     );
 
@@ -171,6 +171,65 @@ class TurnstileDatabase {
       return WhitelistStudent.fromMap(results.first);
     }
     return null;
+  }
+
+  /// Reconcilia la lista blanca local contra la fuente central de verdad (PostgreSQL 16).
+  /// Elimina atómicamente de SQLite a cualquier estudiante que haya sido borrado en PostgreSQL
+  /// e inserta o actualiza a los estudiantes vigentes.
+  Future<int> reconcileWhitelist(List<WhitelistStudent> centralStudents) async {
+    final db = await database;
+    int deletedCount = 0;
+
+    await db.transaction((txn) async {
+      if (centralStudents.isEmpty) {
+        deletedCount = await txn.delete('whitelist_users');
+        return;
+      }
+
+      // 1. Recopilar identificadores válidos desde el backend central
+      final validIds = <String>{};
+      for (final s in centralStudents) {
+        if (s.studentId.isNotEmpty) validIds.add(s.studentId);
+        if (s.rut.isNotEmpty) {
+          validIds.add(s.rut);
+          validIds.add(s.rut.replaceAll('.', '').replaceAll('-', '').trim().toUpperCase());
+        }
+      }
+
+      // 2. Consultar registros actuales en SQLite
+      final currentRows = await txn.query('whitelist_users', columns: ['student_id', 'rut']);
+
+      // 3. Eliminar huérfanos que ya no están en PostgreSQL
+      for (final row in currentRows) {
+        final sid = row['student_id'] as String? ?? '';
+        final rut = row['rut'] as String? ?? '';
+        final cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim().toUpperCase();
+
+        final existsInCentral = validIds.contains(sid) ||
+            validIds.contains(rut) ||
+            validIds.contains(cleanRut);
+
+        if (!existsInCentral) {
+          await txn.delete(
+            'whitelist_users',
+            where: 'student_id = ? OR rut = ?',
+            whereArgs: [sid, rut],
+          );
+          deletedCount++;
+        }
+      }
+
+      // 4. Actualizar o insertar los estudiantes vigentes
+      for (final student in centralStudents) {
+        await txn.insert(
+          'whitelist_users',
+          student.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+
+    return deletedCount;
   }
 
   Future<void> insertOrUpdateStudent(WhitelistStudent student) async {

@@ -231,6 +231,15 @@ class _KioskMainViewState extends State<KioskMainView>
               ),
               const SizedBox(width: 12),
 
+              // Botón Sincronización Manual Anti-Entropy (PostgreSQL SSOT)
+              IconButton(
+                icon: const Icon(Icons.sync_rounded,
+                    color: KioskTheme.haloFaceScanning, size: 22),
+                tooltip: 'Sincronizar Lista Blanca con PostgreSQL (Anti-Entropy)',
+                onPressed: () => kioskVm.triggerManualSync(),
+              ),
+              const SizedBox(width: 4),
+
               // Botón Panel Guardia
               IconButton(
                 icon: const Icon(Icons.admin_panel_settings_rounded,
@@ -358,7 +367,7 @@ class _KioskMainViewState extends State<KioskMainView>
   /// Panel lateral que informa en tiempo real detección facial y coincidencia con enrolados
   Widget _buildLiveFaceTelemetryPanel(KioskViewModel kioskVm) {
     final bool hasFace = kioskVm.liveFaceDetected;
-    final bool hasMatch = hasFace && kioskVm.liveMatchedName.isNotEmpty;
+    final bool hasMatch = hasFace && kioskVm.liveCamState == 'GRANTED' && kioskVm.liveMatchedName.isNotEmpty;
     final double simPercent = (kioskVm.liveMatchedScore * 100).clamp(0.0, 100.0);
 
     return Container(
@@ -477,92 +486,96 @@ class _KioskMainViewState extends State<KioskMainView>
             ),
           ),
 
-          // 3. Indicador 2: Identidad y Match Vectorial
-          if (hasFace)
-            if (hasMatch)
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: KioskTheme.haloGranted.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: KioskTheme.haloGranted.withValues(alpha: 0.4)),
+          // 3. Indicador 2: Identidad y Match Vectorial 1:1 basado estrictamente en la trama
+          if (kioskVm.active2FAStudent != null)
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: (kioskVm.active2FASimilarity != null && kioskVm.active2FASimilarity! >= 0.65
+                        ? KioskTheme.haloGranted
+                        : KioskTheme.haloFaceScanning)
+                    .withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: (kioskVm.active2FASimilarity != null && kioskVm.active2FASimilarity! >= 0.65
+                          ? KioskTheme.haloGranted
+                          : KioskTheme.haloFaceScanning)
+                      .withValues(alpha: 0.5),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.verified_user_rounded,
-                            size: 14, color: KioskTheme.haloGranted),
-                        SizedBox(width: 5),
-                        Text(
-                          'COINCIDENCIA ENROLADA',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.6,
-                            color: KioskTheme.haloGranted,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      kioskVm.liveMatchedName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                        color: KioskTheme.textWhite,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        kioskVm.active2FASimilarity != null && kioskVm.active2FASimilarity! >= 0.65
+                            ? Icons.verified_user_rounded
+                            : Icons.security_rounded,
+                        size: 14,
+                        color: kioskVm.active2FASimilarity != null && kioskVm.active2FASimilarity! >= 0.65
+                            ? KioskTheme.haloGranted
+                            : KioskTheme.haloFaceScanning,
                       ),
-                    ),
-                    Text(
-                      'RUT: ${kioskVm.liveMatchedRut}  •  ${simPercent.toStringAsFixed(1)}% Similitud',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: KioskTheme.textGrey,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: KioskTheme.haloNfcReading.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: KioskTheme.haloNfcReading.withValues(alpha: 0.4)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: const [
-                        Icon(Icons.help_outline_rounded,
-                            size: 14, color: KioskTheme.haloNfcReading),
-                        SizedBox(width: 5),
-                        Text(
-                          'ROSTRO NO ENROLADO',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.6,
-                            color: KioskTheme.haloNfcReading,
-                          ),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'VALIDACIÓN 2FA EN CURSO (1:1)',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.6,
+                          color: KioskTheme.haloFaceScanning,
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    kioskVm.active2FAStudent!.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: KioskTheme.textWhite,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Desconocido (${simPercent.toStringAsFixed(1)}% < 65% umbral)',
-                      style: const TextStyle(fontSize: 10, color: KioskTheme.textGrey),
+                  ),
+                  Text(
+                    kioskVm.active2FASimilarity != null
+                        ? 'Similitud con Trama: ${(kioskVm.active2FASimilarity! * 100).toStringAsFixed(1)}% (Umbral: 65%)'
+                        : 'Mire a la cámara para contrastar con su credencial...',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: kioskVm.active2FASimilarity != null && kioskVm.active2FASimilarity! >= 0.65
+                          ? KioskTheme.haloGranted
+                          : KioskTheme.textGrey,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
-              )
+                  ),
+                ],
+              ),
+            )
+          else if (hasFace)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: KioskTheme.haloFaceScanning.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: KioskTheme.haloFaceScanning.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.qr_code_scanner, size: 14, color: KioskTheme.haloFaceScanning),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Rostro detectado • Ingrese credencial (QR/NFC o RUT)',
+                      style: TextStyle(fontSize: 10, color: KioskTheme.textGrey, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            )
           else
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -576,7 +589,7 @@ class _KioskMainViewState extends State<KioskMainView>
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Sitúese frente a la cámara para identificar identidad.',
+                      'Sitúese frente a la pantalla e ingrese su credencial.',
                       style: TextStyle(fontSize: 10, color: KioskTheme.textGrey),
                     ),
                   ),
@@ -742,36 +755,53 @@ class _KioskMainViewState extends State<KioskMainView>
           style: const TextStyle(fontSize: 13, color: KioskTheme.haloFaceScanning),
         ),
         const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: KioskTheme.haloFaceScanning.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: KioskTheme.haloFaceScanning),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: KioskTheme.haloFaceScanning,
-                ),
+        Builder(
+          builder: (context) {
+            final double? liveSim = kioskVm.active2FASimilarity;
+            final bool isPassing = liveSim != null && liveSim >= 0.65;
+            final Color accentColor = isPassing ? KioskTheme.haloGranted : KioskTheme.haloFaceScanning;
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: accentColor),
               ),
-              SizedBox(width: 10),
-              Text(
-                'FACTOR 2: VALIDANDO ROSTRO CONTRA VECTOR 512D EN SQLITE...',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: KioskTheme.haloFaceScanning,
-                  letterSpacing: 0.5,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!isPassing)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: KioskTheme.haloFaceScanning,
+                      ),
+                    )
+                  else
+                    const Icon(
+                      Icons.verified_user_rounded,
+                      size: 16,
+                      color: KioskTheme.haloGranted,
+                    ),
+                  const SizedBox(width: 10),
+                  Text(
+                    liveSim != null
+                        ? 'FACTOR 2 (1:1): ${(liveSim * 100).toStringAsFixed(1)}% SIMILITUD (UMBRAL: 65%)'
+                        : 'FACTOR 2: VALIDANDO ROSTRO CONTRA VECTOR DE LA CREDENCIAL...',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: accentColor,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ],
     );
@@ -981,8 +1011,9 @@ class _KioskMainViewState extends State<KioskMainView>
                     ),
                     onChanged: (val) {
                       final trimmed = val.trim();
+                      // Disparar solo cuando se pegue un JSON completo o un RUT formateado completo
                       if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-                          (trimmed.length >= 10 && RegExp(r'\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK]').hasMatch(trimmed))) {
+                          (trimmed.length >= 11 && trimmed.contains('-') && RegExp(r'^\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]$').hasMatch(trimmed))) {
                         _processPastedPayload(trimmed);
                       }
                     },
@@ -999,7 +1030,7 @@ class _KioskMainViewState extends State<KioskMainView>
                 ),
                 icon: const Icon(Icons.check_circle_outline, size: 16),
                 onPressed: () => _processPastedPayload(_qrInputController.text),
-                label: const Text('PROCESAR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+                label: const Text('PROCESAR 2FA', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
               ),
             ],
           ),
@@ -1025,17 +1056,16 @@ class _KioskMainViewState extends State<KioskMainView>
                     children: [
                       ActionChip(
                         avatar: const Icon(Icons.verified_user_rounded, size: 14, color: KioskTheme.haloGranted),
-                        label: const Text('RUT Sebastián Freire', style: TextStyle(fontSize: 11)),
+                        label: const Text('Luciano Valenzuela (2FA)', style: TextStyle(fontSize: 11)),
                         onPressed: () {
-                          setState(() {
-                            _qrInputController.text = '21.460.709-3';
-                          });
+                          _qrInputController.text = '21.041.170-4';
+                          _processPastedPayload('21.041.170-4');
                         },
                       ),
                       const SizedBox(width: 6),
                       ActionChip(
-                        avatar: const Icon(Icons.play_arrow_rounded, size: 14, color: KioskTheme.haloGranted),
-                        label: const Text('Procesar Sebastián Freire (2FA OK)', style: TextStyle(fontSize: 11)),
+                        avatar: const Icon(Icons.verified_user_rounded, size: 14, color: KioskTheme.haloGranted),
+                        label: const Text('Sebastián Freire (2FA)', style: TextStyle(fontSize: 11)),
                         onPressed: () {
                           _qrInputController.text = '21.460.709-3';
                           _processPastedPayload('21.460.709-3');

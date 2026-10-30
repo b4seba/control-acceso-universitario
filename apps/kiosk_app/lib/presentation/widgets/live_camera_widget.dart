@@ -70,8 +70,8 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
 
   void _startStream() {
     _streamTimer?.cancel();
-    // 25 FPS polling sobre localhost (40 ms)
-    _streamTimer = Timer.periodic(const Duration(milliseconds: 40), (_) => _fetchFrame());
+    // 30 FPS polling fluido sobre localhost (33 ms)
+    _streamTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _fetchFrame());
   }
 
   Future<void> _fetchFrame() async {
