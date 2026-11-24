@@ -86,6 +86,4 @@ INSERT INTO turnstiles (id, campus_id, name, ip_address) VALUES
 ('TRN-TEMUCO-01', 'CAMPUS_TEMUCO', 'Torniquete Central Temuco', '192.168.40.101')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO users_rbac (student_id, rut, full_name, email, role, career, campus_id, enrollment_status) VALUES
-('ua-stu-2026-001', '21.460.709-3', 'Sebastián Freire', 'sfreire@uautonoma.cl', 'ESTUDIANTE', 'Ingeniería Civil Informática', 'CAMPUS_PROVIDENCIA', 'VIGENTE')
-ON CONFLICT (student_id) DO NOTHING;
+-- Tabla users_rbac se inicializa vacía: los estudiantes se enrolan desde el Portal Web con su vector biométrico real 512D.
