@@ -1,0 +1,4 @@
+# Permite ejecutar `docker compose up -d` directamente desde la raíz del proyecto
+# delegando en la definición única de deploy/docker-compose.yml.
+include:
+  - deploy/docker-compose.yml

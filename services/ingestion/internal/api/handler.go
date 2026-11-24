@@ -3,10 +3,11 @@ package api
 import (
 	"bytes"
 	"context"
-	"log"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -18,19 +19,40 @@ import (
 )
 
 type APIHandler struct {
-	pool      *workerpool.WorkerPool
-	repo      repository.RepositoryInterface
-	qdrant    *repository.QdrantClient
-	startTime time.Time
+	pool          *workerpool.WorkerPool
+	repo          repository.RepositoryInterface
+	qdrant        *repository.QdrantClient
+	edgeCameraURL string
+	startTime     time.Time
 }
 
 func NewAPIHandler(pool *workerpool.WorkerPool, repo repository.RepositoryInterface, qdrant *repository.QdrantClient) *APIHandler {
-	return &APIHandler{
-		pool:      pool,
-		repo:      repo,
-		qdrant:    qdrant,
-		startTime: time.Now(),
+	edgeURL := strings.TrimRight(os.Getenv("EDGE_CAMERA_URL"), "/")
+	if edgeURL == "" {
+		edgeURL = "http://127.0.0.1:5050"
 	}
+	return &APIHandler{
+		pool:          pool,
+		repo:          repo,
+		qdrant:        qdrant,
+		edgeCameraURL: edgeURL,
+		startTime:     time.Now(),
+	}
+}
+
+// postToEdgeCamera envía notificaciones JSON al servicio local/edge de cámara (:5050).
+func (h *APIHandler) postToEdgeCamera(path string, payload interface{}, timeout time.Duration) bool {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Post(h.edgeCameraURL+path, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // RegisterRoutes configura los endpoints REST en el motor Gin
@@ -380,18 +402,14 @@ func (h *APIHandler) RegisterUser(c *gin.Context) {
 
 	// Sincronizar en segundo plano con el nodo Edge / SQLite WAL local (:5050)
 	go func() {
-		edgePayload, err := json.Marshal(map[string]interface{}{
+		h.postToEdgeCamera("/enroll", map[string]interface{}{
 			"student_id": user.StudentID,
 			"rut":        user.RUT,
 			"full_name":  user.FullName,
 			"career":     user.Career,
 			"campus":     user.Campus,
 			"vector":     req.Vector,
-		})
-		if err == nil {
-			client := &http.Client{Timeout: 600 * time.Millisecond}
-			_, _ = client.Post("http://127.0.0.1:5050/enroll", "application/json", bytes.NewBuffer(edgePayload))
-		}
+		}, 600*time.Millisecond)
 	}()
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -509,9 +527,7 @@ func (h *APIHandler) UpdateUserStatus(c *gin.Context) {
 	}
 
 	go func() {
-		client := &http.Client{Timeout: 500 * time.Millisecond}
-		payload, _ := json.Marshal(map[string]string{"rut": rut, "status": req.Status})
-		_, _ = client.Post("http://127.0.0.1:5050/update_user_status", "application/json", bytes.NewBuffer(payload))
+		h.postToEdgeCamera("/update_user_status", map[string]string{"rut": rut, "status": req.Status}, 500*time.Millisecond)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -541,9 +557,7 @@ func (h *APIHandler) DeleteUser(c *gin.Context) {
 	}
 
 	go func() {
-		client := &http.Client{Timeout: 500 * time.Millisecond}
-		payload, _ := json.Marshal(map[string]string{"rut": rut, "student_id": studentID})
-		_, _ = client.Post("http://127.0.0.1:5050/delete_user", "application/json", bytes.NewBuffer(payload))
+		h.postToEdgeCamera("/delete_user", map[string]string{"rut": rut, "student_id": studentID}, 500*time.Millisecond)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -664,19 +678,9 @@ func (h *APIHandler) ExecuteReconciliation(ctx context.Context) (map[string]inte
 	// Notificar a SQLite Edge vía servicio local :5050
 	sqliteSynced := 0
 	sqliteStatus := "OFFLINE (EDGE_LOCAL_PENDING)"
-	edgePayload, err := json.Marshal(map[string]interface{}{
-		"users": edgeUsers,
-	})
-	if err == nil {
-		client := &http.Client{Timeout: 1500 * time.Millisecond}
-		resp, err := client.Post("http://127.0.0.1:5050/reconcile", "application/json", bytes.NewBuffer(edgePayload))
-		if err == nil {
-			defer resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				sqliteSynced = len(edgeUsers)
-				sqliteStatus = "SINCRONIZADO_100_PORCIENTO"
-			}
-		}
+	if h.postToEdgeCamera("/reconcile", map[string]interface{}{"users": edgeUsers}, 1500*time.Millisecond) {
+		sqliteSynced = len(edgeUsers)
+		sqliteStatus = "SINCRONIZADO_100_PORCIENTO"
 	}
 
 	report := map[string]interface{}{

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -94,9 +95,15 @@ func main() {
 	}
 
 	// 5. Inicialización y arranque del Servidor gRPC (HTTP/2 + Protobuf en puerto 50051)
+	grpcPort := 50051
+	if gp := os.Getenv("GRPC_PORT"); gp != "" {
+		if parsed, err := strconv.Atoi(gp); err == nil && parsed > 0 {
+			grpcPort = parsed
+		}
+	}
 	grpcServer := edgegrpc.NewTurnstileGRPCServer(pool, repo, qdrantClient)
 	go func() {
-		if err := grpcServer.Start(50051); err != nil {
+		if err := grpcServer.Start(grpcPort); err != nil {
 			log.Printf("[gRPC] Servidor gRPC finalizado: %v", err)
 		}
 	}()

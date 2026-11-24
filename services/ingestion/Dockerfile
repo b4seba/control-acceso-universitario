@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -19,6 +19,6 @@ RUN apk --no-cache add ca-certificates tzdata
 
 COPY --from=builder /app/ingest_server /app/ingest_server
 
-EXPOSE 8080
+EXPOSE 8080 50051
 
 CMD ["/app/ingest_server"]
