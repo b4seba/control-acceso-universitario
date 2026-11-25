@@ -31,6 +31,8 @@
     font-family: var(--font-sans);
     background-color: var(--color-canvas);
     color: var(--color-ink);
+    scroll-padding-top: 5.5rem;
+    -webkit-tap-highlight-color: rgba(158, 27, 50, 0.14);
   }
 
   button:not(:disabled),

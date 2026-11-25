@@ -18,19 +18,21 @@ export default function VectorInspectModal({ student, onClose }) {
       {student && (
         <div className="space-y-4">
           <dl className="divide-y divide-hairline rounded-lg border border-hairline bg-canvas text-xs px-3.5">
-            <div className="flex justify-between py-2.5 gap-3">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2.5 gap-0.5 sm:gap-3">
               <dt className="text-ink-secondary">Estudiante</dt>
-              <dd className="font-semibold text-ink">{student.full_name}</dd>
+              <dd className="font-semibold text-ink break-words sm:text-right">{student.full_name}</dd>
             </div>
-            <div className="flex justify-between py-2.5 gap-3 font-mono">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2.5 gap-0.5 sm:gap-3 font-mono">
               <dt className="text-ink-secondary font-sans">RUT / ID</dt>
-              <dd className="text-ink font-medium">
+              <dd className="text-ink font-medium break-all sm:text-right">
                 {student.rut} · {student.student_id}
               </dd>
             </div>
-            <div className="flex justify-between py-2.5 gap-3 font-mono">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2.5 gap-0.5 sm:gap-3 font-mono">
               <dt className="text-ink-secondary font-sans">Colección Vectorial</dt>
-              <dd className="text-success font-semibold">student_face_embeddings_512d (Cosine)</dd>
+              <dd className="text-success font-semibold break-all sm:text-right">
+                student_face_embeddings_512d (Cosine)
+              </dd>
             </div>
           </dl>
 
@@ -56,7 +58,7 @@ export default function VectorInspectModal({ student, onClose }) {
             <button
               type="button"
               onClick={onClose}
-              className="min-h-[40px] px-4 py-2 rounded-lg bg-ink hover:bg-ink/90 text-white font-semibold text-xs transition-colors duration-150"
+              className="w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-lg bg-ink hover:bg-ink/90 text-white font-semibold text-xs transition-colors duration-150"
             >
               Cerrar Inspección
             </button>
