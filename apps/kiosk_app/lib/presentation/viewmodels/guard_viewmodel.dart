@@ -34,7 +34,7 @@ class GuardViewModel extends ChangeNotifier {
       notifyListeners();
       return true;
     } else {
-      _errorMessage = 'Credenciales de seguridad inválidas (Use: guardia / ua2026)';
+      _errorMessage = 'Credenciales de seguridad inválidas';
       notifyListeners();
       return false;
     }

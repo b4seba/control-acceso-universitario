@@ -510,6 +510,60 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
     }
   }
 
+  Future<WhitelistStudent?> _resolveStudentForSimulation(String rawInput) async {
+    final trimmed = rawInput.trim();
+    if (trimmed.isNotEmpty) {
+      String query = trimmed;
+      final match = RegExp(r'(\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK])').firstMatch(trimmed);
+      if (match != null) {
+        query = match.group(1)!;
+      }
+      final found = await database.findStudentByIdOrRut(query);
+      if (found != null) return found;
+    }
+    return database.getFirstStudent();
+  }
+
+  Future<void> simulateDivergentFace(String rawInput) async {
+    final student = await _resolveStudentForSimulation(rawInput);
+    if (student == null) {
+      showToast(
+        title: 'SIN ESTUDIANTES EN SQLITE LOCAL',
+        message: 'Enrole un estudiante o sincronice la lista blanca para simular biometría divergente.',
+        color: const Color(0xFFEF4444),
+        icon: Icons.info_outline_rounded,
+      );
+      return;
+    }
+    await handleNfcOrQrDetected({
+      'student_id': student.studentId,
+      'rut': student.rut,
+    }, autoSimulateFace: false);
+    Future.delayed(const Duration(milliseconds: 300), () {
+      handleFaceMismatchSimulation();
+    });
+  }
+
+  Future<void> simulateTimeout(String rawInput) async {
+    final student = await _resolveStudentForSimulation(rawInput);
+    if (student == null) {
+      showToast(
+        title: 'SIN ESTUDIANTES EN SQLITE LOCAL',
+        message: 'Enrole un estudiante o sincronice la lista blanca para simular timeout.',
+        color: const Color(0xFFEF4444),
+        icon: Icons.info_outline_rounded,
+      );
+      return;
+    }
+    await handleNfcOrQrDetected({
+      'student_id': student.studentId,
+      'rut': student.rut,
+    }, autoSimulateFace: false);
+    Future.delayed(const Duration(milliseconds: 300), () {
+      handleTimeoutForceSimulation();
+    });
+  }
+
   /// Ejecución de flujo vertical completo rápido para video / demostración docente
   Future<void> runDemoFlow({required WhitelistStudent student, bool matchFace = true}) async {
     final payload = {

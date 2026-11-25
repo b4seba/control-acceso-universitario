@@ -50,7 +50,7 @@ class AuthViewModel extends ChangeNotifier {
     }
 
     try {
-      // 1. Intentar autenticar contra el backend central Golang / PostgreSQL
+      // 1. Autenticar estrictamente contra el backend central Golang / PostgreSQL
       final uri = Uri.parse('${_resolveApiBaseUrl()}/api/v1/auth/login');
       final res = await _client.post(
         uri,
@@ -59,11 +59,14 @@ class AuthViewModel extends ChangeNotifier {
           'rut': rutOrEmail.trim(),
           'password': password.trim(),
         }),
-      ).timeout(const Duration(milliseconds: 4000));
+      ).timeout(const Duration(milliseconds: 5000));
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final userData = data['user'] as Map<String, dynamic>;
+      final Map<String, dynamic>? data = res.body.isNotEmpty
+          ? (jsonDecode(res.body) as Map<String, dynamic>?)
+          : null;
+
+      if (res.statusCode == 200 && data != null && data['user'] is Map<String, dynamic>) {
+        final userData = Map<String, dynamic>.from(data['user'] as Map<String, dynamic>);
         if (data.containsKey('face_vector_512')) {
           userData['face_vector_512'] = data['face_vector_512'];
         }
@@ -73,28 +76,17 @@ class AuthViewModel extends ChangeNotifier {
         notifyListeners();
         return true;
       }
-    } catch (_) {
-      // Si el backend Go central está desconectado, autenticar contra la base local
-    }
 
-    // 2. Fallback a base institucional local
-    final user = InstitutionalMockDatabase.findByRut(rutOrEmail) ??
-        InstitutionalMockDatabase.users.cast<StudentUser?>().firstWhere(
-            (u) => u?.email.toLowerCase() == rutOrEmail.trim().toLowerCase(),
-            orElse: () => null);
-
-    if (user == null) {
       _status = AuthStatus.error;
-      _errorMessage = 'RUT no encontrado en el registro institucional.';
+      _errorMessage = (data?['error'] as String?) ?? 'RUT o contraseña incorrectos.';
+      notifyListeners();
+      return false;
+    } catch (_) {
+      _status = AuthStatus.error;
+      _errorMessage = 'No se pudo conectar con el servidor central. Verifica tu conexión.';
       notifyListeners();
       return false;
     }
-
-    _currentUser = user;
-    _status = AuthStatus.authenticated;
-    _errorMessage = null;
-    notifyListeners();
-    return true;
   }
 
   /// Enrolamiento y Creación de Cuenta Real (Persiste en PostgreSQL, Qdrant y SQLite WAL)
@@ -134,11 +126,16 @@ class AuthViewModel extends ChangeNotifier {
           'password': password.trim(),
           'vector': vector512,
         }),
-      ).timeout(const Duration(milliseconds: 4000));
+      ).timeout(const Duration(milliseconds: 5000));
 
-      if (res.statusCode == 201 || res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final userData = data['user'] as Map<String, dynamic>;
+      final Map<String, dynamic>? data = res.body.isNotEmpty
+          ? (jsonDecode(res.body) as Map<String, dynamic>?)
+          : null;
+
+      if ((res.statusCode == 201 || res.statusCode == 200) &&
+          data != null &&
+          data['user'] is Map<String, dynamic>) {
+        final userData = Map<String, dynamic>.from(data['user'] as Map<String, dynamic>);
         userData['face_vector_512'] = vector512;
         _currentUser = StudentUser.fromJson(userData);
 
@@ -164,30 +161,17 @@ class AuthViewModel extends ChangeNotifier {
         notifyListeners();
         return true;
       }
+
+      _status = AuthStatus.error;
+      _errorMessage = (data?['error'] as String?) ?? 'No se pudo completar el registro.';
+      notifyListeners();
+      return false;
     } catch (_) {
-      // Fallback
+      _status = AuthStatus.error;
+      _errorMessage = 'No se pudo conectar con el servidor central para registrar la cuenta.';
+      notifyListeners();
+      return false;
     }
-
-    // Crear usuario localmente si el backend Go no responde
-    final cleanRut = rut.replaceAll('.', '').replaceAll('-', '').trim();
-    final localUser = StudentUser(
-      id: 'ua-stu-$cleanRut',
-      rut: rut.trim(),
-      fullName: fullName.trim(),
-      email: '${fullName.trim().toLowerCase().replaceAll(' ', '.')}@cloud.uautonoma.cl',
-      career: career.trim(),
-      campus: campus.trim(),
-      role: UserRole.estudiante,
-      enrollmentStatus: EnrollmentStatus.vigente,
-      avatarInitials: fullName.trim().split(' ').map((p) => p[0]).take(2).join().toUpperCase(),
-      faceVector512: vector512,
-    );
-
-    _currentUser = localUser;
-    _status = AuthStatus.authenticated;
-    _errorMessage = null;
-    notifyListeners();
-    return true;
   }
 
   void logout() {

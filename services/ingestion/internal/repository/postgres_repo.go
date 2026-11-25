@@ -52,6 +52,8 @@ func NewPostgresRepository(connString string) (*PostgresRepository, error) {
 		return nil, fmt.Errorf("fallo ping a PostgreSQL 16: %w", err)
 	}
 
+	_, _ = pool.Exec(ctx, `ALTER TABLE users_rbac ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';`)
+
 	return &PostgresRepository{pool: pool}, nil
 }
 
@@ -144,28 +146,29 @@ func (r *PostgresRepository) GetRecentAuditLogs(ctx context.Context, limit int) 
 
 func (r *PostgresRepository) CreateUser(ctx context.Context, user models.UserRBAC) error {
 	query := `
-		INSERT INTO users_rbac (student_id, rut, full_name, email, role, career, campus_id, enrollment_status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO users_rbac (student_id, rut, full_name, email, role, career, campus_id, enrollment_status, password_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (rut) DO UPDATE SET 
 			full_name = EXCLUDED.full_name, 
 			career = EXCLUDED.career,
 			campus_id = EXCLUDED.campus_id,
-			enrollment_status = EXCLUDED.enrollment_status;
+			enrollment_status = EXCLUDED.enrollment_status,
+			password_hash = CASE WHEN EXCLUDED.password_hash <> '' THEN EXCLUDED.password_hash ELSE users_rbac.password_hash END;
 	`
-	_, err := r.pool.Exec(ctx, query, user.StudentID, user.RUT, user.FullName, user.Email, user.Role, user.Career, user.Campus, user.EnrollmentStatus)
+	_, err := r.pool.Exec(ctx, query, user.StudentID, user.RUT, user.FullName, user.Email, user.Role, user.Career, user.Campus, user.EnrollmentStatus, user.PasswordHash)
 	return err
 }
 
 func (r *PostgresRepository) GetUserByRUT(ctx context.Context, rut string) (*models.UserRBAC, error) {
 	clean := cleanRUT(rut)
 	query := `
-		SELECT student_id, rut, full_name, email, role, career, campus_id, enrollment_status, created_at
+		SELECT student_id, rut, full_name, email, role, career, campus_id, enrollment_status, password_hash, created_at
 		FROM users_rbac
 		WHERE REPLACE(REPLACE(rut, '.', ''), '-', '') = $1
 		LIMIT 1;
 	`
 	var u models.UserRBAC
-	err := r.pool.QueryRow(ctx, query, clean).Scan(&u.StudentID, &u.RUT, &u.FullName, &u.Email, &u.Role, &u.Career, &u.Campus, &u.EnrollmentStatus, &u.CreatedAt)
+	err := r.pool.QueryRow(ctx, query, clean).Scan(&u.StudentID, &u.RUT, &u.FullName, &u.Email, &u.Role, &u.Career, &u.Campus, &u.EnrollmentStatus, &u.PasswordHash, &u.CreatedAt)
 	if err != nil {
 		return nil, err
 	}

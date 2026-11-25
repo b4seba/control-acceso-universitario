@@ -355,8 +355,14 @@ func (h *APIHandler) RegisterUser(c *gin.Context) {
 		return
 	}
 
-	if req.RUT == "" || req.FullName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Se requiere RUT y Nombre Completo"})
+	if strings.TrimSpace(req.RUT) == "" || strings.TrimSpace(req.FullName) == "" || strings.TrimSpace(req.Password) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Se requiere RUT, Nombre Completo y Contraseña"})
+		return
+	}
+
+	passwordHash, err := crypto.HashPassword(strings.TrimSpace(req.Password))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo procesar la contraseña"})
 		return
 	}
 
@@ -383,6 +389,7 @@ func (h *APIHandler) RegisterUser(c *gin.Context) {
 		Career:           req.Career,
 		Campus:           campusID,
 		EnrollmentStatus: "VIGENTE",
+		PasswordHash:     passwordHash,
 		CreatedAt:        time.Now().UTC(),
 	}
 
@@ -428,14 +435,24 @@ func (h *APIHandler) LoginUser(c *gin.Context) {
 		return
 	}
 
-	if req.RUT == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "El RUT es obligatorio"})
+	if strings.TrimSpace(req.RUT) == "" || strings.TrimSpace(req.Password) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Se requiere RUT institucional y contraseña"})
 		return
 	}
 
 	user, err := h.repo.GetUserByRUT(c.Request.Context(), req.RUT)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Credenciales no encontradas en el registro institucional"})
+		return
+	}
+
+	if user.PasswordHash == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Este usuario no tiene contraseña registrada. Vuelve a enrolarte en el Portal Web."})
+		return
+	}
+
+	if !crypto.VerifyPassword(strings.TrimSpace(req.Password), user.PasswordHash) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Contraseña incorrecta"})
 		return
 	}
 

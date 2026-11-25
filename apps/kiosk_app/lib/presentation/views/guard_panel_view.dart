@@ -12,8 +12,8 @@ class GuardPanelView extends StatefulWidget {
 }
 
 class _GuardPanelViewState extends State<GuardPanelView> {
-  final _userController = TextEditingController(text: 'guardia');
-  final _passController = TextEditingController(text: 'ua2026');
+  final _userController = TextEditingController();
+  final _passController = TextEditingController();
   bool _obscurePassword = true;
 
   @override
@@ -145,6 +145,7 @@ class _GuardPanelViewState extends State<GuardPanelView> {
                   style: const TextStyle(fontSize: 14, color: KioskTheme.textWhite),
                   decoration: const InputDecoration(
                     labelText: 'Usuario Operador',
+                    hintText: 'Ingrese usuario operador',
                     prefixIcon: Icon(Icons.person_outline_rounded),
                   ),
                 ),
@@ -157,6 +158,7 @@ class _GuardPanelViewState extends State<GuardPanelView> {
                   style: const TextStyle(fontSize: 14, color: KioskTheme.textWhite),
                   decoration: InputDecoration(
                     labelText: 'Contraseña de Seguridad',
+                    hintText: 'Ingrese contraseña',
                     prefixIcon: const Icon(Icons.lock_outline_rounded),
                     suffixIcon: IconButton(
                       tooltip: _obscurePassword ? 'Mostrar contraseña' : 'Ocultar contraseña',

@@ -101,59 +101,15 @@ class TurnstileDatabase {
     // Índices B-Tree para optimización de consultas en < 3 ms
     await db.execute('CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox_events(status);');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_whitelist_rut ON whitelist_users(rut);');
-
-    // Poblar lista blanca inicial con estudiantes de prueba institucional
-    await _seedInitialWhitelist(db);
   }
 
-  Future<void> _seedInitialWhitelist(Database db) async {
-    final students = [
-      WhitelistStudent(
-        studentId: 'ua-stu-2026-001',
-        rut: '20.456.789-K',
-        fullName: 'Sebastián Freire',
-        career: 'Ingeniería Civil Informática',
-        campus: 'Campus Providencia',
-        role: 'ESTUDIANTE',
-        status: 'VIGENTE',
-        faceVector512: WhitelistStudent.generateDeterministicVector('freire-face-seed-2026'),
-      ),
-      WhitelistStudent(
-        studentId: 'ua-stu-2026-002',
-        rut: '20.123.456-7',
-        fullName: 'Luciano Valenzuela',
-        career: 'Ingeniería Civil Informática',
-        campus: 'Campus Providencia',
-        role: 'ESTUDIANTE',
-        status: 'VIGENTE',
-        faceVector512: WhitelistStudent.generateDeterministicVector('valenzuela-face-seed-2026'),
-      ),
-      WhitelistStudent(
-        studentId: 'ua-aca-2026-003',
-        rut: '15.678.910-1',
-        fullName: 'Cristofher Rojas Rojas',
-        career: 'Facultad de Ingeniería',
-        campus: 'Campus Providencia',
-        role: 'ACADEMICO',
-        status: 'VIGENTE',
-        faceVector512: WhitelistStudent.generateDeterministicVector('rojas-face-seed-2026'),
-      ),
-      WhitelistStudent(
-        studentId: 'ua-stu-2026-004',
-        rut: '19.876.543-2',
-        fullName: 'Matías González (Sancionado)',
-        career: 'Derecho',
-        campus: 'Campus El Llano Subercaseaux',
-        role: 'ESTUDIANTE',
-        status: 'SUSPENDIDO',
-        faceVector512: WhitelistStudent.generateDeterministicVector('gonzalez-face-seed-2026'),
-      ),
-    ];
-
-    for (final s in students) {
-      await db.insert('whitelist_users', s.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+  Future<WhitelistStudent?> getFirstStudent() async {
+    final db = await database;
+    final results = await db.query('whitelist_users', limit: 1);
+    if (results.isNotEmpty) {
+      return WhitelistStudent.fromMap(results.first);
     }
+    return null;
   }
 
   Future<WhitelistStudent?> findStudentByIdOrRut(String query) async {

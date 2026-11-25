@@ -13,8 +13,8 @@ class LoginView extends StatefulWidget {
 }
 
 class _LoginViewState extends State<LoginView> {
-  final _rutController = TextEditingController(text: '21.460.709-3');
-  final _passwordController = TextEditingController(text: 'ua2026pass');
+  final _rutController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
   @override
@@ -122,7 +122,7 @@ class _LoginViewState extends State<LoginView> {
                           ),
                           decoration: const InputDecoration(
                             labelText: 'RUT Institucional',
-                            hintText: 'Ej. 21.460.709-3',
+                            hintText: 'Ej. 12.345.678-9',
                             prefixIcon: Icon(Icons.badge_outlined),
                           ),
                         ),
@@ -141,6 +141,7 @@ class _LoginViewState extends State<LoginView> {
                           ),
                           decoration: InputDecoration(
                             labelText: 'Contraseña SIRAD',
+                            hintText: 'Ingresa tu contraseña',
                             prefixIcon: const Icon(Icons.lock_outline_rounded),
                             suffixIcon: IconButton(
                               tooltip: _obscurePassword ? 'Mostrar contraseña' : 'Ocultar contraseña',

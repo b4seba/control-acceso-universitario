@@ -25,14 +25,16 @@ async function notifyEdgeService(endpoint, payload) {
   }
 }
 
+const INITIAL_FORM_DATA = {
+  rut: '',
+  fullName: '',
+  career: '',
+  campus: '',
+  password: '',
+};
+
 export default function App() {
-  const [formData, setFormData] = useState({
-    rut: '21.460.709-3',
-    fullName: 'Sebastián Freire',
-    career: 'Ingeniería Civil Informática',
-    campus: 'CAMPUS_ALAMEDA',
-    password: 'ua2026pass',
-  });
+  const [formData, setFormData] = useState(INITIAL_FORM_DATA);
 
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState(null);
@@ -280,8 +282,14 @@ export default function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.rut.trim() || !formData.fullName.trim()) {
-      pushFeedback('error', 'RUT y Nombre Completo son obligatorios.', 4500);
+    if (
+      !formData.rut.trim() ||
+      !formData.fullName.trim() ||
+      !formData.career.trim() ||
+      !formData.campus.trim() ||
+      !formData.password.trim()
+    ) {
+      pushFeedback('error', 'Completa RUT, nombre, carrera, sede y contraseña.', 4500);
       return;
     }
 
@@ -351,9 +359,11 @@ export default function App() {
     if (results.success) {
       pushFeedback(
         'success',
-        `Estudiante ${formData.fullName} enrolado y guardado en PostgreSQL 16 y Qdrant (512D).`,
+        `Estudiante ${payload.full_name} enrolado y guardado en PostgreSQL 16 y Qdrant (512D).`,
         5500
       );
+      setFormData(INITIAL_FORM_DATA);
+      setVector512(null);
       fetchStudents();
     }
   };

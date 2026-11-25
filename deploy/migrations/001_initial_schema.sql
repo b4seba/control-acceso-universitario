@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users_rbac (
     career VARCHAR(128) NOT NULL,
     campus_id VARCHAR(32) NOT NULL REFERENCES campus(id),
     enrollment_status VARCHAR(32) NOT NULL CHECK (enrollment_status IN ('VIGENTE', 'SUSPENDIDO')),
+    password_hash TEXT NOT NULL DEFAULT '',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

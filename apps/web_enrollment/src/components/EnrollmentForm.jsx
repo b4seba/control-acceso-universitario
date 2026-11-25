@@ -71,7 +71,7 @@ export default function EnrollmentForm({
               value={formData.rut}
               onChange={(e) => onChangeField('rut', e.target.value)}
               className={`${inputBaseClass} font-mono`}
-              placeholder="21.460.709-3"
+              placeholder="Ej. 12.345.678-9"
             />
           </div>
         </div>
@@ -90,7 +90,7 @@ export default function EnrollmentForm({
               value={formData.fullName}
               onChange={(e) => onChangeField('fullName', e.target.value)}
               className={inputBaseClass}
-              placeholder="Sebastián Freire"
+              placeholder="Nombre completo del estudiante"
             />
           </div>
         </div>
@@ -109,7 +109,7 @@ export default function EnrollmentForm({
               value={formData.career}
               onChange={(e) => onChangeField('career', e.target.value)}
               className={inputBaseClass}
-              placeholder="Ingeniería Civil Informática"
+              placeholder="Ej. Ingeniería Civil Informática"
             />
           </div>
         </div>
@@ -123,10 +123,16 @@ export default function EnrollmentForm({
             <MapPin className="w-4 h-4 text-ink-muted absolute left-3.5 top-3 pointer-events-none" aria-hidden="true" />
             <select
               id="field-campus"
+              required
               value={formData.campus}
               onChange={(e) => onChangeField('campus', e.target.value)}
-              className={`${inputBaseClass} pr-10 appearance-none`}
+              className={`${inputBaseClass} pr-10 appearance-none ${
+                !formData.campus ? 'text-ink-muted' : 'text-ink'
+              }`}
             >
+              <option value="" disabled>
+                Seleccione una sede / campus...
+              </option>
               {CAMPUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
                   {opt.label}
@@ -151,7 +157,7 @@ export default function EnrollmentForm({
               value={formData.password}
               onChange={(e) => onChangeField('password', e.target.value)}
               className={`${inputBaseClass} pr-11`}
-              placeholder="••••••••"
+              placeholder="Crea una contraseña de acceso"
             />
             <button
               type="button"

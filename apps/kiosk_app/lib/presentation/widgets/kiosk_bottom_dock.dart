@@ -60,7 +60,7 @@ class _KioskBottomDockState extends State<KioskBottomDock> {
                     color: KioskTheme.textWhite,
                   ),
                   decoration: InputDecoration(
-                    hintText: 'Pegue trama NFC/QR o ingrese RUT (ej. 21.460.709-3)...',
+                    hintText: 'Pegue trama NFC/QR o ingrese RUT...',
                     prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.content_paste_rounded, size: 17),
@@ -139,7 +139,7 @@ class _KioskBottomDockState extends State<KioskBottomDock> {
                       ),
                       const SizedBox(width: 4),
                       const Text(
-                        'Herramientas de Simulación / QA (6)',
+                        'Herramientas de Simulación / QA (4)',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -170,31 +170,13 @@ class _KioskBottomDockState extends State<KioskBottomDock> {
               runSpacing: 6,
               children: [
                 _buildQaChip(
-                  icon: Icons.verified_user_rounded,
-                  iconColor: KioskTheme.signalGrantedText,
-                  label: 'Luciano Valenzuela (2FA)',
-                  onPressed: () {
-                    widget.controller.text = '21.041.170-4';
-                    widget.onSubmitPayload('21.041.170-4');
-                  },
-                ),
-                _buildQaChip(
-                  icon: Icons.verified_user_rounded,
-                  iconColor: KioskTheme.signalGrantedText,
-                  label: 'Sebastián Freire (2FA)',
-                  onPressed: () {
-                    widget.controller.text = '21.460.709-3';
-                    widget.onSubmitPayload('21.460.709-3');
-                  },
-                ),
-                _buildQaChip(
                   icon: Icons.block_rounded,
                   iconColor: KioskTheme.signalDenied,
                   label: 'RUT No Registrado (Denegado)',
                   textColor: KioskTheme.signalDenied,
                   onPressed: () {
-                    widget.controller.text = '99.999.999-9';
-                    widget.onSubmitPayload('99.999.999-9');
+                    widget.controller.text = '00.000.000-0';
+                    widget.onSubmitPayload('00.000.000-0');
                   },
                 ),
                 _buildQaChip(
@@ -202,30 +184,14 @@ class _KioskBottomDockState extends State<KioskBottomDock> {
                   iconColor: KioskTheme.signalDenied,
                   label: 'Rostro Divergente (2FA)',
                   textColor: KioskTheme.signalDenied,
-                  onPressed: () {
-                    widget.kioskVm.handleNfcOrQrDetected({
-                      'student_id': 'ua-stu-2026-001',
-                      'rut': '21.460.709-3',
-                    }, autoSimulateFace: false);
-                    Future.delayed(const Duration(milliseconds: 300), () {
-                      widget.kioskVm.handleFaceMismatchSimulation();
-                    });
-                  },
+                  onPressed: () => widget.kioskVm.simulateDivergentFace(widget.controller.text),
                 ),
                 _buildQaChip(
                   icon: Icons.timer_off_rounded,
                   iconColor: KioskTheme.signalAmber,
                   label: 'Timeout 3.5s',
                   textColor: KioskTheme.signalAmber,
-                  onPressed: () {
-                    widget.kioskVm.handleNfcOrQrDetected({
-                      'student_id': 'ua-stu-2026-001',
-                      'rut': '20.456.789-K',
-                    }, autoSimulateFace: false);
-                    Future.delayed(const Duration(milliseconds: 300), () {
-                      widget.kioskVm.handleTimeoutForceSimulation();
-                    });
-                  },
+                  onPressed: () => widget.kioskVm.simulateTimeout(widget.controller.text),
                 ),
                 _buildQaChip(
                   icon: Icons.clear_rounded,
