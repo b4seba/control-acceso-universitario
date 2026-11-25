@@ -4,6 +4,7 @@ Demostrador y Visualizador de la Base de Datos Vectorial Qdrant
 Universidad - Evaluación Sumativa 2
 Zero-Trust Biometrics (Protección Estricta de la Privacidad)
 """
+import os
 import sys
 import hashlib
 
@@ -37,7 +38,8 @@ def main():
 
     # 1. Inicialización de Qdrant Engine
     print("\n[+] Inicializando motor de base de datos vectorial Qdrant...")
-    client = QdrantClient("http://localhost:6333")
+    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+    client = QdrantClient(qdrant_url)
     collection_name = "student_face_embeddings_512d"
 
     if not client.collection_exists(collection_name):

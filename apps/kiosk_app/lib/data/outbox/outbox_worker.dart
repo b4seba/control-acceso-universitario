@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../config/backend_config.dart';
 import '../database/turnstile_database.dart';
 
 class OutboxWorker extends ChangeNotifier {
@@ -19,8 +20,8 @@ class OutboxWorker extends ChangeNotifier {
 
   OutboxWorker({
     required this.database,
-    this.backendBaseUrl = 'http://127.0.0.1:8080',
-  }) {
+    String? backendBaseUrl,
+  }) : backendBaseUrl = backendBaseUrl ?? BackendConfig.baseUrl {
     _startSyncLoop();
     refreshStats();
   }
@@ -118,8 +119,8 @@ class OutboxWorker extends ChangeNotifier {
             )
             .timeout(const Duration(seconds: 2));
       } catch (e) {
-        // Si el backend físico aún no está levantado, el Transactional Outbox
-        // mantiene los eventos seguros en SQLite local (Modo Isla automático)
+        // Si el backend físico aún no está levantado o cambió la red, reintentar detección
+        backendBaseUrl = await BackendConfig.resolveActiveBackend();
         _lastSyncMessage = 'Backend central no alcanzable. Reintento en 3s (Backoff).';
       }
 

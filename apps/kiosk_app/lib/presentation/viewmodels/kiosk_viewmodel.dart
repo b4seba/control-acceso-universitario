@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import '../../data/config/backend_config.dart';
 import '../../data/database/turnstile_database.dart';
 import '../../domain/fsm/turnstile_state.dart';
 import '../../domain/models/whitelist_student.dart';
@@ -121,8 +122,8 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   Future<void> syncWhitelistFromCentral() async {
     try {
       final res = await _httpClient
-          .get(Uri.parse('http://localhost:8080/api/v1/sync/whitelist'))
-          .timeout(const Duration(milliseconds: 1500));
+          .get(Uri.parse('${BackendConfig.baseUrl}/api/v1/sync/whitelist'))
+          .timeout(const Duration(milliseconds: 2500));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final users = data['users'] as List?;
@@ -150,7 +151,9 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      await BackendConfig.resolveActiveBackend();
+    }
   }
 
   Future<void> triggerManualSync() async {

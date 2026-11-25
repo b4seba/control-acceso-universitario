@@ -12,7 +12,8 @@ import urllib.request
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(PROJECT_ROOT, "ua_turnstile_edge.db")
-API_URL = "http://localhost:8080/api/v1/sync/whitelist"
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8080").rstrip("/")
+API_URL = f"{API_BASE}/api/v1/sync/whitelist"
 
 def reconcile_sqlite():
     print(f"[*] Consultando lista blanca autorizada en {API_URL}...")

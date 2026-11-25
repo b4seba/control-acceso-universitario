@@ -119,15 +119,16 @@ def save_to_sqlite(student_id, rut, full_name, career, campus, role, status, vec
 
 def sync_to_central_api(student_id, vector512):
     """Intenta notificar al microservicio Golang / Qdrant central si está en ejecución."""
+    api_base = os.getenv("API_BASE_URL", "http://localhost:8080").rstrip("/")
     try:
-        url = "http://localhost:8080/api/v1/vectors"
+        url = f"{api_base}/api/v1/vectors"
         payload = json.dumps({"student_id": student_id, "vector": vector512}).encode("utf-8")
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
         with urllib.request.urlopen(req, timeout=2) as resp:
             if resp.status in [200, 201]:
                 print("[+] Sincronizado exitosamente con API Central Golang y colección Qdrant Vector DB.")
     except Exception as e:
-        print(f"[!] Backend Go no alcanzable en http://localhost:8080 ({e}). Vector retenido de forma segura en SQLite WAL local.")
+        print(f"[!] Backend Go no alcanzable en {api_base} ({e}). Vector retenido de forma segura en SQLite WAL local.")
 
 def main():
     parser = argparse.ArgumentParser(description="Enrolamiento Biométrico Real 512D")

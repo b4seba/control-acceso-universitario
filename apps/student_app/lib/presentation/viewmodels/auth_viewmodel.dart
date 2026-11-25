@@ -3,6 +3,18 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../domain/models/student_user.dart';
 
+const String _envApiBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
+
+String _resolveApiBaseUrl() {
+  if (_envApiBaseUrl.isNotEmpty) {
+    return _envApiBaseUrl.replaceAll(RegExp(r'/+$'), '');
+  }
+  if (kIsWeb) {
+    return Uri.base.origin;
+  }
+  return 'http://localhost:8080';
+}
+
 enum AuthStatus { unauthenticated, authenticating, authenticated, error }
 
 class AuthViewModel extends ChangeNotifier {
@@ -39,7 +51,7 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       // 1. Intentar autenticar contra el backend central Golang / PostgreSQL
-      final uri = Uri.parse('http://localhost:8080/api/v1/auth/login');
+      final uri = Uri.parse('${_resolveApiBaseUrl()}/api/v1/auth/login');
       final res = await _client.post(
         uri,
         headers: {'Content-Type': 'application/json'},
@@ -47,7 +59,7 @@ class AuthViewModel extends ChangeNotifier {
           'rut': rutOrEmail.trim(),
           'password': password.trim(),
         }),
-      ).timeout(const Duration(milliseconds: 1200));
+      ).timeout(const Duration(milliseconds: 4000));
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -110,7 +122,7 @@ class AuthViewModel extends ChangeNotifier {
 
     try {
       // 1. Notificar al backend Go para persistir en PostgreSQL 16 y Qdrant
-      final uri = Uri.parse('http://localhost:8080/api/v1/auth/register');
+      final uri = Uri.parse('${_resolveApiBaseUrl()}/api/v1/auth/register');
       final res = await _client.post(
         uri,
         headers: {'Content-Type': 'application/json'},
@@ -122,7 +134,7 @@ class AuthViewModel extends ChangeNotifier {
           'password': password.trim(),
           'vector': vector512,
         }),
-      ).timeout(const Duration(milliseconds: 1500));
+      ).timeout(const Duration(milliseconds: 4000));
 
       if (res.statusCode == 201 || res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;

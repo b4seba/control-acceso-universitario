@@ -47,3 +47,6 @@ ARQUITECTURA_EV2.md
 # Archivos temporales de SQLite WAL
 *.db-shm
 *.db-wal
+
+# Logs de ejecucion local Edge
+.kiosk_camera.log

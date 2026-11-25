@@ -45,14 +45,15 @@ class CameraEngineService {
         return false;
       }
 
-      debugPrint('[CameraEngineService] Auto-lanzando motor de visión: $scriptPath');
+      final pythonExe = _resolvePythonExecutable(scriptPath);
+      debugPrint('[CameraEngineService] Auto-lanzando motor de visión ($pythonExe): $scriptPath');
 
       // Iniciar proceso desacoplado en segundo plano
       _spawnedProcess = await Process.start(
-        'python',
+        pythonExe,
         [scriptPath],
         mode: ProcessStartMode.detachedWithStdio,
-        runInShell: true,
+        runInShell: Platform.isWindows,
       );
 
       // Esperar hasta 5 segundos a que el servidor HTTP responda
@@ -70,6 +71,19 @@ class CameraEngineService {
     } finally {
       _isLaunching = false;
     }
+  }
+
+  String _resolvePythonExecutable(String scriptPath) {
+    final projectRoot = File(scriptPath).parent.parent.path;
+    final candidates = [
+      '$projectRoot/.venv/bin/python',
+      '$projectRoot/.venv/Scripts/python.exe',
+      '$projectRoot\\.venv\\Scripts\\python.exe',
+    ];
+    for (final c in candidates) {
+      if (File(c).existsSync()) return c;
+    }
+    return Platform.isWindows ? 'python' : 'python3';
   }
 
   /// Busca la ruta del script en el árbol de carpetas
