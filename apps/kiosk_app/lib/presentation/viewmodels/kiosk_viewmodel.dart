@@ -79,9 +79,20 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
     required this.database,
     required this.outboxWorker,
   }) {
-    CameraEngineService.instance.ensureEngineRunning();
+    _initCameraEngine();
     _startCameraStatusPolling();
     syncWhitelistFromCentral();
+  }
+
+  Future<void> _initCameraEngine() async {
+    final ok = await CameraEngineService.instance.ensureEngineRunning();
+    if (ok && _liveCameraEnabled) {
+      try {
+        await _httpClient
+            .post(Uri.parse('http://127.0.0.1:5050/camera/start'))
+            .timeout(const Duration(milliseconds: 1200));
+      } catch (_) {}
+    }
   }
 
   TurnstileState get currentState => _currentState;
@@ -108,15 +119,29 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   String get liveMatchedStudentId => _active2FAStudent?.studentId ?? '';
   double get liveMatchedScore => _active2FASimilarity ?? 0.0;
 
-  void toggleLiveCamera() {
+  Future<void> toggleLiveCamera() async {
     _liveCameraEnabled = !_liveCameraEnabled;
     if (!_liveCameraEnabled) {
       _liveFaceDetected = false;
       _active2FAStudent = null;
       _active2FASimilarity = null;
+      _liveCamState = 'CAMERA_OFF';
+      notifyListeners();
+      try {
+        await _httpClient
+            .post(Uri.parse('http://127.0.0.1:5050/camera/stop'))
+            .timeout(const Duration(milliseconds: 1500));
+      } catch (_) {}
+    } else {
       _liveCamState = 'IDLE';
+      notifyListeners();
+      await CameraEngineService.instance.ensureEngineRunning();
+      try {
+        await _httpClient
+            .post(Uri.parse('http://127.0.0.1:5050/camera/start'))
+            .timeout(const Duration(milliseconds: 1500));
+      } catch (_) {}
     }
-    notifyListeners();
   }
 
   Future<void> syncWhitelistFromCentral() async {
@@ -602,6 +627,12 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   @override
   void dispose() {
     _cameraStatusPollTimer?.cancel();
+    try {
+      _httpClient
+          .post(Uri.parse('http://127.0.0.1:5050/camera/stop'))
+          .timeout(const Duration(milliseconds: 500));
+    } catch (_) {}
+    CameraEngineService.instance.stopEngineIfSpawned();
     _httpClient.close();
     _autoResetTimer?.cancel();
     _faceScanSimulationTimer?.cancel();

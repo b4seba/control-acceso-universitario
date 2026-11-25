@@ -78,6 +78,7 @@ def generate_placeholder_frame(msg="ESPERANDO DISPOSITIVO DE CÁMARA..."):
     return jpeg.tobytes()
 
 # Estado global compartido
+camera_enabled = True
 current_frame_jpeg = generate_placeholder_frame()
 current_status = {
     "state": "IDLE",
@@ -86,14 +87,54 @@ current_status = {
     "rut": "",
     "score": 0.0,
     "latency_ms": 0,
+    "face_detected": False,
+    "camera_enabled": True,
     "timestamp": "",
 }
 status_lock = threading.Lock()
 frame_lock = threading.Lock()
 vector_lock = threading.Lock()
 raw_frame_lock = threading.Lock()
+camera_state_lock = threading.Lock()
 latest_live_vector = None
 latest_raw_frame = None
+
+
+def is_camera_enabled():
+    with camera_state_lock:
+        return camera_enabled
+
+
+def set_camera_enabled(enabled: bool):
+    global camera_enabled, latest_live_vector, latest_raw_frame, current_frame_jpeg, current_status
+    with camera_state_lock:
+        camera_enabled = enabled
+    if not enabled:
+        with raw_frame_lock:
+            latest_raw_frame = None
+        with vector_lock:
+            latest_live_vector = None
+        with frame_lock:
+            current_frame_jpeg = generate_placeholder_frame("CAMARA DESACTIVADA POR EL OPERADOR")
+        with status_lock:
+            current_status = {
+                "state": "CAMERA_OFF",
+                "face_detected": False,
+                "camera_enabled": False,
+                "latency_ms": 0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+    else:
+        with frame_lock:
+            current_frame_jpeg = generate_placeholder_frame("ACTIVANDO CAMARA WEB...")
+        with status_lock:
+            current_status = {
+                "state": "IDLE",
+                "face_detected": False,
+                "camera_enabled": True,
+                "latency_ms": 0,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
 
 def extract_512d_vector(face_img):
     """
@@ -239,6 +280,20 @@ def biometric_ai_worker():
     THRESHOLD = 0.65
 
     while True:
+        if not is_camera_enabled():
+            with vector_lock:
+                latest_live_vector = None
+            with status_lock:
+                current_status = {
+                    "state": "CAMERA_OFF",
+                    "face_detected": False,
+                    "camera_enabled": False,
+                    "latency_ms": 0,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            time.sleep(0.2)
+            continue
+
         frame = None
         with raw_frame_lock:
             if latest_raw_frame is not None:
@@ -327,6 +382,7 @@ def biometric_ai_worker():
             current_status = {
                 "state": detected_state,
                 "face_detected": face_detected,
+                "camera_enabled": is_camera_enabled(),
                 "latency_ms": latency_ms if latency_ms > 0 else 30,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -337,39 +393,64 @@ def biometric_ai_worker():
 def camera_loop():
     """
     HILO DE CAPTURA Y STREAMING EXCLUSIVO A 30 FPS CONSTANTES
-    Garantiza video 100% fluido en Kiosk App sin bloqueos por IA.
+    Garantiza video 100% fluido en Kiosk App sin bloqueos por IA y liberación real del hardware.
     """
-    global current_frame_jpeg, latest_raw_frame
+    global current_frame_jpeg, latest_raw_frame, latest_live_vector
 
-    print("[*] Iniciando sondeo de dispositivo de video...")
-    cap = open_camera()
-    retry_count = 0
-    while cap is None or not cap.isOpened():
-        retry_count += 1
-        with frame_lock:
-            current_frame_jpeg = generate_placeholder_frame(f"ESPERANDO LIBERACION DE CAMARA (Intento #{retry_count})...")
-        if retry_count % 3 == 1:
-            print(f"[!] Cámara no disponible (intento #{retry_count}). Puede estar ocupada por la web o inicializándose. Reintentando en 2s...")
-        time.sleep(2.0)
-        cap = open_camera()
-
-    try:
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-    except Exception:
-        pass
-
-    print("[+] Cámara web lista y activa para streaming continuo a 30 FPS.")
-
-    # Lanzar trabajador asíncrono de inferencia biométrica en segundo plano
     ai_thread = threading.Thread(target=biometric_ai_worker, daemon=True)
     ai_thread.start()
     print("[+] Motor de inferencia biométrica asíncrona iniciado en hilo dedicado.")
 
+    cap = None
+    retry_count = 0
     consecutive_failed_frames = 0
 
     while True:
+        # Si el operador desactivó la cámara, liberar hardware inmediatamente
+        if not is_camera_enabled():
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+                cap = None
+                print("[*] Cámara física liberada y apagada por solicitud del Kiosko.")
+            with raw_frame_lock:
+                latest_raw_frame = None
+            with vector_lock:
+                latest_live_vector = None
+            retry_count = 0
+            consecutive_failed_frames = 0
+            time.sleep(0.15)
+            continue
+
+        # Abrir dispositivo si aún no está abierto
+        if cap is None or not cap.isOpened():
+            if retry_count == 0:
+                print("[*] Iniciando sondeo de dispositivo de video...")
+            cap = open_camera()
+            if cap is None or not cap.isOpened():
+                retry_count += 1
+                with frame_lock:
+                    current_frame_jpeg = generate_placeholder_frame(f"ESPERANDO LIBERACION DE CAMARA (Intento #{retry_count})...")
+                if retry_count % 3 == 1:
+                    print(f"[!] Cámara no disponible (intento #{retry_count}). Reintentando en 2s...")
+                for _ in range(20):
+                    if not is_camera_enabled():
+                        break
+                    time.sleep(0.1)
+                continue
+
+            retry_count = 0
+            consecutive_failed_frames = 0
+            try:
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                cap.set(cv2.CAP_PROP_FPS, 30)
+            except Exception:
+                pass
+            print("[+] Cámara web lista y activa para streaming continuo a 30 FPS.")
+
         ret, frame = cap.read()
         if not ret or frame is None:
             consecutive_failed_frames += 1
@@ -377,11 +458,11 @@ def camera_loop():
                 print("[!] Señal de video perdida momentáneamente. Reconectando dispositivo...")
                 with frame_lock:
                     current_frame_jpeg = generate_placeholder_frame("RECONECTANDO DISPOSITIVO DE VIDEO...")
-                cap.release()
-                cap = open_camera()
-                while cap is None or not cap.isOpened():
-                    time.sleep(2.0)
-                    cap = open_camera()
+                try:
+                    cap.release()
+                except Exception:
+                    pass
+                cap = None
                 consecutive_failed_frames = 0
             time.sleep(0.02)
             continue
@@ -682,6 +763,34 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.send_header("Connection", "close")
                 self.end_headers()
                 self.wfile.write(err)
+
+        elif self.path == "/camera/stop":
+            set_camera_enabled(False)
+            resp = json.dumps({
+                "status": "CAMERA_STOPPED",
+                "camera_enabled": False,
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
+            self.send_header("Content-Length", str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
+
+        elif self.path == "/camera/start":
+            set_camera_enabled(True)
+            resp = json.dumps({
+                "status": "CAMERA_STARTED",
+                "camera_enabled": True,
+            }).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Connection", "close")
+            self.send_header("Content-Length", str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
 
         else:
             self.send_error(404)
