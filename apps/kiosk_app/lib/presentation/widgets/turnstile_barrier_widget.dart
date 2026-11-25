@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/kiosk_theme.dart';
 
-/// Bloque de Estado del Torniquete (100% Software)
-/// Indica de forma clara, moderna y sin representaciones mecánicas físicas
-/// cuando el torniquete está CERRADO y cuando está ABIERTO.
+/// Airport/transit-inspired software turnstile wayfinding signage block.
+/// Displays crisp OPEN (granted) or CLOSED (standby) status without neon glows.
 class TurnstileBarrierWidget extends StatefulWidget {
   final bool isOpen;
   final String? studentName;
@@ -59,198 +58,175 @@ class _TurnstileBarrierWidgetState extends State<TurnstileBarrierWidget>
 
   @override
   Widget build(BuildContext context) {
-    return widget.isOpen ? _buildOpenBlock() : _buildClosedBlock();
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: widget.isCompact ? 360 : 520),
+      child: widget.isOpen ? _buildOpenSignage() : _buildClosedSignage(),
+    );
   }
 
-  /// Bloque: TORNIQUETE ABIERTO (Paso Habilitado)
-  Widget _buildOpenBlock() {
+  Widget _buildOpenSignage() {
     return AnimatedBuilder(
       animation: _timerController,
-      builder: (context, child) {
-        final progress = 1.0 - _timerController.value;
+      builder: (context, _) {
+        final progress = (1.0 - _timerController.value).clamp(0.0, 1.0);
         final secondsLeft = (2.0 * progress).toStringAsFixed(1);
 
         return Container(
-          width: widget.isCompact ? 320 : 420,
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
           decoration: BoxDecoration(
-            color: const Color(0xFF032219),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: KioskTheme.haloGranted,
-              width: 2.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: KioskTheme.haloGranted.withValues(alpha: 0.45),
-                blurRadius: 32,
-                spreadRadius: 4,
-              ),
-            ],
+            color: KioskTheme.signalGrantedBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: KioskTheme.signalGranted.withValues(alpha: 0.6), width: 1.5),
           ),
+          clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Barra superior: Etiqueta de software
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: KioskTheme.haloGranted,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'CONTROL ELECTRÓNICO DE ACCESO',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
-                          color: KioskTheme.haloGranted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: KioskTheme.haloGranted.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: KioskTheme.haloGranted, width: 1),
-                    ),
-                    child: Text(
-                      'CIERRE EN ${secondsLeft}s',
-                      style: const TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        color: KioskTheme.haloGranted,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 14),
-
-              // Icono Central de Desbloqueo y Texto Enorme
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: KioskTheme.haloGranted.withValues(alpha: 0.2),
-                      border: Border.all(color: KioskTheme.haloGranted, width: 2),
-                    ),
-                    child: const Icon(
-                      Icons.lock_open_rounded,
-                      size: 36,
-                      color: KioskTheme.haloGranted,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'TORNIQUETE ABIERTO',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.8,
-                          color: KioskTheme.haloGranted,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'PASO HABILITADO • ADELANTE',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.0,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 14),
-
-              // Datos del Estudiante Verificado
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: KioskTheme.haloGranted.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.lock_open_rounded, size: 16, color: KioskTheme.signalGrantedText),
+                            SizedBox(width: 8),
+                            Text(
+                              'CONTROL DE ACCESO',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.0,
+                                color: KioskTheme.signalGrantedText,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: KioskTheme.signalGranted,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'CIERRE ${secondsLeft}s',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                              color: Color(0xFF090A0D),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: KioskTheme.signalGranted,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 28,
+                            color: Color(0xFF090A0D),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'TORNIQUETE ABIERTO',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.6,
+                                  color: KioskTheme.signalGrantedText,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Paso habilitado · Adelante',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: KioskTheme.textWhite,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: KioskTheme.industrialBlack.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: KioskTheme.signalGranted.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
                         children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  widget.studentName ?? 'Estudiante',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: KioskTheme.textWhite,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  widget.studentRut ?? '',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontFamily: 'monospace',
+                                    fontFamilyFallback: KioskTheme.monoFallback,
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                    color: KioskTheme.signalGrantedText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           Text(
-                            widget.studentName ?? 'Sebastián Freire',
+                            '${widget.latencyMs} ms',
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            widget.studentRut ?? '21.460.709-3',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: KioskTheme.haloGranted,
+                              fontFamily: 'monospace',
+                              fontFamilyFallback: KioskTheme.monoFallback,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                              color: KioskTheme.signalGrantedText,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: KioskTheme.haloGranted.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '${widget.latencyMs} ms',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: KioskTheme.haloGranted,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 12),
-
-              // Barra de Tiempo de Paso Restante
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 5,
-                  backgroundColor: Colors.white10,
-                  valueColor: const AlwaysStoppedAnimation<Color>(KioskTheme.haloGranted),
-                ),
+              LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: KioskTheme.industrialBlack,
+                valueColor: const AlwaysStoppedAnimation<Color>(KioskTheme.signalGranted),
               ),
             ],
           ),
@@ -259,111 +235,71 @@ class _TurnstileBarrierWidgetState extends State<TurnstileBarrierWidget>
     );
   }
 
-  /// Bloque: TORNIQUETE CERRADO (En espera)
-  Widget _buildClosedBlock() {
+  Widget _buildClosedSignage() {
     return Container(
-      width: widget.isCompact ? 320 : 420,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFF334155),
-          width: 1.5,
-        ),
+        color: KioskTheme.industrialSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: KioskTheme.industrialBorderStrong, width: 1),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFFEF4444),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'CONTROL ELECTRÓNICO DE ACCESO',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.8,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4), width: 1),
-                ),
-                child: const Text(
-                  'BLOQUEADO',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.8,
-                    color: Color(0xFFEF4444),
-                  ),
-                ),
-              ),
-            ],
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: KioskTheme.signalDeniedBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: KioskTheme.signalDenied.withValues(alpha: 0.35)),
+            ),
+            child: const Icon(
+              Icons.lock_rounded,
+              size: 20,
+              color: KioskTheme.signalDenied,
+            ),
           ),
-
-          const SizedBox(height: 12),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.red.withValues(alpha: 0.12),
-                  border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.5), width: 1.5),
-                ),
-                child: const Icon(
-                  Icons.lock_rounded,
-                  size: 28,
-                  color: Color(0xFFEF4444),
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'TORNIQUETE CERRADO',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.4,
-                      color: Colors.white,
-                    ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TORNIQUETE CERRADO',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                    color: KioskTheme.textWhite,
                   ),
-                  SizedBox(height: 2),
-                  Text(
-                    'ESPERANDO CREDENCIAL (2FA)',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: Color(0xFF94A3B8),
-                    ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Esperando credencial NFC / QR (2FA)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: KioskTheme.textGrey,
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: KioskTheme.signalDeniedBg,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: KioskTheme.signalDenied.withValues(alpha: 0.35)),
+            ),
+            child: const Text(
+              'BLOQUEADO',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: KioskTheme.signalDenied,
               ),
-            ],
+            ),
           ),
         ],
       ),

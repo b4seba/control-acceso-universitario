@@ -5,8 +5,8 @@ import 'package:http/http.dart' as http;
 import '../../data/camera/camera_engine_service.dart';
 import '../theme/kiosk_theme.dart';
 
-/// Visor de Cámara en Vivo para el Kiosko Torniquete Edge
-/// Consume el feed JPEG en tiempo real desde el servicio local en http://127.0.0.1:5050/snapshot
+/// Live biometric camera viewport consuming real-time JPEG frames
+/// from http://127.0.0.1:5050/snapshot with restrained industrial framing.
 class LiveCameraWidget extends StatefulWidget {
   final double width;
   final double height;
@@ -16,9 +16,9 @@ class LiveCameraWidget extends StatefulWidget {
 
   const LiveCameraWidget({
     super.key,
-    this.width = 320,
-    this.height = 320,
-    this.haloColor = KioskTheme.haloFaceScanning,
+    this.width = 280,
+    this.height = 280,
+    this.haloColor = KioskTheme.signalScanning,
     this.showOverlayGuides = true,
     this.onFaceDetected,
   });
@@ -33,7 +33,7 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
   bool _isConnected = false;
   bool _isFetching = false;
   Timer? _streamTimer;
-  late AnimationController _laserController;
+  late AnimationController _scanController;
   final http.Client _client = http.Client();
 
   bool _isStartingEngine = false;
@@ -41,9 +41,9 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
   @override
   void initState() {
     super.initState();
-    _laserController = AnimationController(
+    _scanController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
 
     _autoStartEngine();
@@ -63,14 +63,13 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
   @override
   void dispose() {
     _streamTimer?.cancel();
-    _laserController.dispose();
+    _scanController.dispose();
     _client.close();
     super.dispose();
   }
 
   void _startStream() {
     _streamTimer?.cancel();
-    // 30 FPS polling fluido sobre localhost (33 ms)
     _streamTimer = Timer.periodic(const Duration(milliseconds: 33), (_) => _fetchFrame());
   }
 
@@ -89,10 +88,8 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
             _isConnected = true;
           });
         }
-      } else {
-        if (mounted && _isConnected) {
-          setState(() => _isConnected = false);
-        }
+      } else if (mounted && _isConnected) {
+        setState(() => _isConnected = false);
       }
     } catch (_) {
       if (mounted && _isConnected) {
@@ -105,26 +102,20 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
 
   @override
   Widget build(BuildContext context) {
+    final borderColor = _isConnected ? widget.haloColor.withValues(alpha: 0.7) : KioskTheme.industrialBorderStrong;
+
     return Container(
       width: widget.width,
       height: widget.height,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: const Color(0xFF030712),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: widget.haloColor, width: 3),
-        boxShadow: [
-          BoxShadow(
-            color: widget.haloColor.withValues(alpha: 0.35),
-            blurRadius: 28,
-            spreadRadius: 2,
-          ),
-        ],
+        color: const Color(0xFF0A0C10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor, width: 1.5),
       ),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 1. Imagen de Video en Vivo o Pantalla de Desconexión
           if (_isConnected && _frameBytes != null)
             Image.memory(
               _frameBytes!,
@@ -134,11 +125,8 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
           else
             _buildDisconnectedPlaceholder(),
 
-          // 2. Retícula Biométrica y Línea Láser Animada
           if (widget.showOverlayGuides && _isConnected)
-            _buildBiometricHudOverlay(),
-
-
+            _buildCleanReticleOverlay(context),
         ],
       ),
     );
@@ -153,42 +141,42 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
           children: [
             _isStartingEngine
                 ? const SizedBox(
-                    width: 48,
-                    height: 48,
+                    width: 36,
+                    height: 36,
                     child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(KioskTheme.signalScanning),
                     ),
                   )
-                : Icon(Icons.videocam_off_rounded, size: 52, color: Colors.grey.shade600),
-            const SizedBox(height: 14),
+                : const Icon(
+                    Icons.videocam_off_rounded,
+                    size: 40,
+                    color: KioskTheme.textMuted,
+                  ),
+            const SizedBox(height: 12),
             Text(
-              _isStartingEngine ? 'INICIANDO MOTOR BIOMÉTRICO 512D...' : 'SENSOR FACIAL EN ESPERA',
+              _isStartingEngine ? 'INICIANDO MOTOR ÓPTICO' : 'SENSOR FACIAL EN ESPERA',
+              textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.1,
-                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+                color: KioskTheme.textWhite,
               ),
             ),
             const SizedBox(height: 6),
             Text(
               _isStartingEngine
-                  ? 'Inicializando sensor óptico y red neuronal edge...'
-                  : 'Motor biométrico integrado listo para enlace',
+                  ? 'Preparando red neuronal edge 512D...'
+                  : 'Servicio local listo para captura',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+              style: const TextStyle(fontSize: 11, color: KioskTheme.textGrey),
             ),
             const SizedBox(height: 14),
-            ElevatedButton.icon(
+            OutlinedButton.icon(
               onPressed: _isStartingEngine ? null : _autoStartEngine,
-              icon: const Icon(Icons.power_settings_new_rounded, size: 16),
+              icon: const Icon(Icons.power_settings_new_rounded, size: 15),
               label: Text(_isStartingEngine ? 'Iniciando...' : 'Activar Sensor'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: KioskTheme.industrialSurface,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              ),
             ),
           ],
         ),
@@ -196,58 +184,53 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
     );
   }
 
-  Widget _buildBiometricHudOverlay() {
+  Widget _buildCleanReticleOverlay(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final guideColor = Colors.white.withValues(alpha: 0.72);
+
     return Stack(
       children: [
-        // Guía Ovalada Central para el Rostro
+        // Subtle matte oval silhouette frame
         Center(
           child: Container(
-            width: widget.width * 0.55,
-            height: widget.height * 0.72,
+            width: widget.width * 0.56,
+            height: widget.height * 0.70,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.all(
-                Radius.elliptical(widget.width * 0.55, widget.height * 0.72),
+                Radius.elliptical(widget.width * 0.56, widget.height * 0.70),
               ),
               border: Border.all(
-                color: widget.haloColor.withValues(alpha: 0.5),
-                width: 2,
+                color: guideColor.withValues(alpha: 0.55),
+                width: 1.2,
               ),
             ),
           ),
         ),
 
-        // Línea Láser Animada
-        AnimatedBuilder(
-          animation: _laserController,
-          builder: (context, child) {
-            final double topPos = (widget.height * 0.15) +
-                ((widget.height * 0.65) * _laserController.value);
-            return Positioned(
-              top: topPos,
-              left: widget.width * 0.1,
-              right: widget.width * 0.1,
-              child: Container(
-                height: 2,
-                decoration: BoxDecoration(
-                  color: widget.haloColor,
-                  boxShadow: [
-                    BoxShadow(
-                      color: widget.haloColor,
-                      blurRadius: 8,
-                      spreadRadius: 2,
-                    ),
-                  ],
+        // Subtle hairline scan indicator (no glow blur, disabled under reduced motion)
+        if (!reduceMotion)
+          AnimatedBuilder(
+            animation: _scanController,
+            builder: (context, _) {
+              final double topPos =
+                  (widget.height * 0.16) + ((widget.height * 0.66) * _scanController.value);
+              return Positioned(
+                top: topPos,
+                left: widget.width * 0.14,
+                right: widget.width * 0.14,
+                child: Container(
+                  height: 1.5,
+                  color: widget.haloColor.withValues(alpha: 0.65),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
 
-        // Esquinas de Retícula HUD
-        _buildCorner(top: 14, left: 14, isTop: true, isLeft: true),
-        _buildCorner(top: 14, right: 14, isTop: true, isLeft: false),
-        _buildCorner(bottom: 14, left: 14, isTop: false, isLeft: true),
-        _buildCorner(bottom: 14, right: 14, isTop: false, isLeft: false),
+        // Clean architectural corner brackets
+        _buildCorner(top: 12, left: 12, isTop: true, isLeft: true, color: guideColor),
+        _buildCorner(top: 12, right: 12, isTop: true, isLeft: false, color: guideColor),
+        _buildCorner(bottom: 12, left: 12, isTop: false, isLeft: true, color: guideColor),
+        _buildCorner(bottom: 12, right: 12, isTop: false, isLeft: false, color: guideColor),
       ],
     );
   }
@@ -259,6 +242,7 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
     double? right,
     required bool isTop,
     required bool isLeft,
+    required Color color,
   }) {
     return Positioned(
       top: top,
@@ -266,14 +250,14 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
       left: left,
       right: right,
       child: Container(
-        width: 20,
-        height: 20,
+        width: 16,
+        height: 16,
         decoration: BoxDecoration(
           border: Border(
-            top: isTop ? BorderSide(color: widget.haloColor, width: 3) : BorderSide.none,
-            bottom: !isTop ? BorderSide(color: widget.haloColor, width: 3) : BorderSide.none,
-            left: isLeft ? BorderSide(color: widget.haloColor, width: 3) : BorderSide.none,
-            right: !isLeft ? BorderSide(color: widget.haloColor, width: 3) : BorderSide.none,
+            top: isTop ? BorderSide(color: color, width: 2) : BorderSide.none,
+            bottom: !isTop ? BorderSide(color: color, width: 2) : BorderSide.none,
+            left: isLeft ? BorderSide(color: color, width: 2) : BorderSide.none,
+            right: !isLeft ? BorderSide(color: color, width: 2) : BorderSide.none,
           ),
         ),
       ),

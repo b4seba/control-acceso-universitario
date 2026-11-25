@@ -1,22 +1,46 @@
 import 'package:flutter/material.dart';
 
 class KioskTheme {
-  // Colores Industriales de Alto Contraste para Terminales Táctiles de 7"
-  static const Color industrialBlack = Color(0xFF070B19);
-  static const Color industrialSurface = Color(0xFF0F172A);
-  static const Color industrialCard = Color(0xFF1E293B);
-  static const Color industrialBorder = Color(0xFF334155);
+  // Matte anti-glare industrial palette for 7" & desktop edge turnstile terminals
+  static const Color industrialBlack = Color(0xFF0F1115);
+  static const Color industrialSurface = Color(0xFF171A21);
+  static const Color industrialCard = Color(0xFF1E222B);
+  static const Color industrialBorder = Color(0xFF262B36);
+  static const Color industrialBorderStrong = Color(0xFF343B4A);
 
-  // Halos Cromáticos Semánticos de la FSM
-  static const Color haloIdle = Color(0xFF0077B6);         // Azul Neón Cobalto
-  static const Color haloNfcReading = Color(0xFFF59E0B);    // Ámbar / Naranja Industrial
-  static const Color haloFaceScanning = Color(0xFF06B6D4);  // Cian Retícula Biométrica
-  static const Color haloGranted = Color(0xFF10B981);       // Verde Esmeralda Pulsante
-  static const Color haloDenied = Color(0xFFEF4444);        // Rojo Carmesí Alerta
+  // Institutional accent & restrained hardware state signals (WCAG AA verified)
+  static const Color brandCrimson = Color(0xFF9E1B32);
+  static const Color crimsonText = Color(0xFFF07185);
 
-  static const Color textWhite = Color(0xFFF8FAFC);
-  static const Color textGrey = Color(0xFF94A3B8);
-  static const Color textMuted = Color(0xFF64748B);
+  static const Color signalIdle = Color(0xFF3B82F6);
+  static const Color signalScanning = Color(0xFF38BDF8);
+  static const Color signalAmber = Color(0xFFFBBF24);
+  static const Color signalAmberBg = Color(0xFF261E0D);
+
+  static const Color signalGranted = Color(0xFF22C55E);
+  static const Color signalGrantedText = Color(0xFF4ADE80);
+  static const Color signalGrantedBg = Color(0xFF0E2219);
+
+  static const Color signalDenied = Color(0xFFF87171);
+  static const Color signalDeniedBg = Color(0xFF231215);
+
+  static const Color textWhite = Color(0xFFF4F4F5);
+  static const Color textGrey = Color(0xFFA1A1AA);
+  static const Color textMuted = Color(0xFF8E95A2);
+
+  static const List<String> sansFallback = [
+    'IBM Plex Sans',
+    'Noto Sans',
+    'Adwaita Sans',
+    'sans-serif',
+  ];
+
+  static const List<String> monoFallback = [
+    'IBM Plex Mono',
+    'Adwaita Mono',
+    'Liberation Mono',
+    'monospace',
+  ];
 
   static ThemeData get industrialTheme {
     return ThemeData(
@@ -24,46 +48,78 @@ class KioskTheme {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: industrialBlack,
       colorScheme: const ColorScheme.dark(
-        primary: haloIdle,
-        secondary: haloFaceScanning,
+        primary: brandCrimson,
+        secondary: signalScanning,
         surface: industrialSurface,
-        error: haloDenied,
+        error: signalDenied,
+        onPrimary: Colors.white,
         onSurface: textWhite,
       ),
-      fontFamily: 'Segoe UI',
+      fontFamilyFallback: sansFallback,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: industrialSurface,
+        foregroundColor: textWhite,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+      ),
       cardTheme: CardThemeData(
         color: industrialSurface,
-        elevation: 8,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: industrialBorder, width: 1.5),
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: industrialBorder, width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: haloIdle,
+          backgroundColor: brandCrimson,
           foregroundColor: Colors.white,
-          elevation: 6,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          elevation: 0,
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          textStyle: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            fontFamilyFallback: sansFallback,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: textWhite,
+          minimumSize: const Size(40, 40),
+          side: const BorderSide(color: industrialBorderStrong, width: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          textStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            fontFamilyFallback: sansFallback,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: industrialCard,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        labelStyle: const TextStyle(color: textGrey, fontSize: 13),
+        hintStyle: const TextStyle(color: textMuted, fontSize: 13),
+        prefixIconColor: textGrey,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: industrialBorder),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: industrialBorderStrong),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: industrialBorder),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: industrialBorderStrong),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: haloFaceScanning, width: 2),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: signalScanning, width: 1.5),
         ),
       ),
     );
