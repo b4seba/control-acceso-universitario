@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Fingerprint,
-  MapPin,
   RefreshCw,
   Search,
   Trash2,
@@ -10,14 +9,6 @@ import {
   Users,
   X,
 } from 'lucide-react';
-
-const CAMPUS_LABELS = {
-  CAMPUS_ALAMEDA: 'Campus Alameda',
-  CAMPUS_PROVIDENCIA: 'Campus Providencia',
-  CAMPUS_EL_LLANO: 'Campus El Llano',
-  CAMPUS_TALCA: 'Campus Talca',
-  CAMPUS_TEMUCO: 'Campus Temuco',
-};
 
 /**
  * Institutional student directory ledger supporting search, vector inspection,
@@ -140,7 +131,7 @@ export default function StudentDirectoryTable({
           <thead className="bg-canvas text-ink-secondary uppercase tracking-wider text-[11px] font-semibold border-b border-hairline">
             <tr>
               <th scope="col" className="py-3 px-4">Estudiante / RUT</th>
-              <th scope="col" className="py-3 px-4">Carrera y Sede</th>
+              <th scope="col" className="py-3 px-4">Carrera</th>
               <th scope="col" className="py-3 px-4 text-center">Biometría</th>
               <th scope="col" className="py-3 px-4 text-center">Estado SIRAD</th>
               <th scope="col" className="py-3 px-4 text-right">Acciones</th>
@@ -208,7 +199,6 @@ export default function StudentDirectoryTable({
             ) : (
               filteredStudents.map((stu) => {
                 const isVigente = (stu.enrollment_status || stu.status) === 'VIGENTE';
-                const campusLabel = CAMPUS_LABELS[stu.campus] || stu.campus;
 
                 return (
                   <tr key={stu.rut} className="hover:bg-canvas/70 transition-colors duration-150">
@@ -221,12 +211,11 @@ export default function StudentDirectoryTable({
                       <div className="text-[11px] text-ink-muted font-mono">{stu.student_id}</div>
                     </td>
 
-                    {/* Carrera & Campus */}
+                    {/* Carrera */}
                     <td className="py-3.5 px-4 align-middle">
                       <div className="text-ink font-medium text-xs sm:text-sm">{stu.career}</div>
-                      <div className="text-xs text-ink-secondary flex items-center gap-1 mt-0.5">
-                        <MapPin className="w-3.5 h-3.5 text-ink-muted shrink-0" aria-hidden="true" />
-                        <span>{campusLabel}</span>
+                      <div className="text-[11px] text-ink-secondary font-mono mt-0.5">
+                        {stu.role || 'ESTUDIANTE'}
                       </div>
                     </td>
 

@@ -94,7 +94,7 @@ class AuthViewModel extends ChangeNotifier {
     required String rut,
     required String fullName,
     required String career,
-    required String campus,
+    String campus = '',
     required String password,
     List<double>? faceVector,
   }) async {

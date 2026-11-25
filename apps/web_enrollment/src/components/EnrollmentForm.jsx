@@ -2,24 +2,14 @@ import React, { useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
   Database,
   Eye,
   EyeOff,
   Lock,
-  MapPin,
   RefreshCw,
   School,
   User,
 } from 'lucide-react';
-
-const CAMPUS_OPTIONS = [
-  { value: 'CAMPUS_ALAMEDA', label: 'Campus Alameda (Santiago Centro)' },
-  { value: 'CAMPUS_PROVIDENCIA', label: 'Campus Providencia' },
-  { value: 'CAMPUS_EL_LLANO', label: 'Campus El Llano Subercaseaux' },
-  { value: 'CAMPUS_TALCA', label: 'Campus Talca' },
-  { value: 'CAMPUS_TEMUCO', label: 'Campus Temuco' },
-];
 
 /**
  * Academic student enrollment form bound to biometric 512D capture state.
@@ -111,35 +101,6 @@ export default function EnrollmentForm({
               className={inputBaseClass}
               placeholder="Ej. Ingeniería Civil Informática"
             />
-          </div>
-        </div>
-
-        {/* Campus / Sede */}
-        <div>
-          <label htmlFor="field-campus" className="block text-xs font-semibold text-ink-secondary mb-1.5">
-            Sede / Campus <span className="text-crimson" aria-hidden="true">*</span>
-          </label>
-          <div className="relative">
-            <MapPin className="w-4 h-4 text-ink-muted absolute left-3.5 top-3 pointer-events-none" aria-hidden="true" />
-            <select
-              id="field-campus"
-              required
-              value={formData.campus}
-              onChange={(e) => onChangeField('campus', e.target.value)}
-              className={`${inputBaseClass} pr-10 appearance-none ${
-                !formData.campus ? 'text-ink-muted' : 'text-ink'
-              }`}
-            >
-              <option value="" disabled>
-                Seleccione una sede / campus...
-              </option>
-              {CAMPUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-ink-muted absolute right-3.5 top-3 pointer-events-none" aria-hidden="true" />
           </div>
         </div>
 

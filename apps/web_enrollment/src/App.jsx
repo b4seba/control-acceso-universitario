@@ -29,7 +29,6 @@ const INITIAL_FORM_DATA = {
   rut: '',
   fullName: '',
   career: '',
-  campus: '',
   password: '',
 };
 
@@ -286,10 +285,9 @@ export default function App() {
       !formData.rut.trim() ||
       !formData.fullName.trim() ||
       !formData.career.trim() ||
-      !formData.campus.trim() ||
       !formData.password.trim()
     ) {
-      pushFeedback('error', 'Completa RUT, nombre, carrera, sede y contraseña.', 4500);
+      pushFeedback('error', 'Completa RUT, nombre, carrera y contraseña.', 4500);
       return;
     }
 
@@ -313,7 +311,6 @@ export default function App() {
       rut: formData.rut.trim(),
       full_name: formData.fullName.trim(),
       career: formData.career.trim(),
-      campus: formData.campus.trim(),
       password: formData.password.trim(),
       vector: vector512,
     };

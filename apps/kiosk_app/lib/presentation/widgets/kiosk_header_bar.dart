@@ -62,7 +62,7 @@ class KioskHeaderBar extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${kioskVm.campusId} · ${kioskVm.turnstileId}',
+                      'NODO PERIMETRAL · ${kioskVm.turnstileId}',
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 11,

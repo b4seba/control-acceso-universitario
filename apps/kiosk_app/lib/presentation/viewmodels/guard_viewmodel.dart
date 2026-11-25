@@ -28,7 +28,7 @@ class GuardViewModel extends ChangeNotifier {
     if ((username.trim() == 'guardia' || username.trim() == 'admin') &&
         password.trim() == 'ua2026') {
       _isLoggedIn = true;
-      _guardName = username == 'admin' ? 'Supervisor Central' : 'Guardia de Acceso Providencia';
+      _guardName = username == 'admin' ? 'Supervisor Central' : 'Guardia de Acceso';
       _errorMessage = null;
       loadRecentEvents();
       notifyListeners();

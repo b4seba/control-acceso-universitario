@@ -86,7 +86,7 @@ class _CredentialContentState extends State<_CredentialContent>
               ),
             ),
             Text(
-              user.campus,
+              user.role.label,
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
