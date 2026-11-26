@@ -43,6 +43,8 @@ ARQUITECTURA_EV2.md
 *.onnx
 **/models/*.onnx
 !**/face_detection_yunet_2023mar.onnx
+!**/2.7_80x80_MiniFASNetV2.onnx
+!**/4_0_0_80x80_MiniFASNetV1SE.onnx
 
 # Archivos temporales de SQLite WAL
 *.db-shm

@@ -42,6 +42,8 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   final http.Client _httpClient = http.Client();
   bool _liveCameraEnabled = true;
   int _syncTickCounter = 0;
+  bool _isProcessing2FA = false;
+  int _spoofPollStreak = 0;
 
   KioskToast? _currentToast;
   KioskToast? get currentToast => _currentToast;
@@ -102,6 +104,9 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   bool get isLiveCameraEnabled => _liveCameraEnabled;
 
   bool _liveFaceDetected = false;
+  bool _liveIsRealFace = true;
+  double _liveLivenessScore = 1.0;
+  String _liveSpoofReason = '';
   String _liveCamState = 'IDLE';
   int _liveLatencyMs = 30;
 
@@ -110,10 +115,41 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   double? _active2FASimilarity;
 
   bool get liveFaceDetected => _liveFaceDetected;
+  bool get liveIsRealFace => _liveIsRealFace;
+  double get liveLivenessScore => _liveLivenessScore;
+  String get liveSpoofReason => _liveSpoofReason;
   String get liveCamState => _liveCamState;
   int get liveLatencyMs => _liveLatencyMs;
   WhitelistStudent? get active2FAStudent => _active2FAStudent;
   double? get active2FASimilarity => _active2FASimilarity;
+
+  String _describeSpoofReason(String code) {
+    switch (code) {
+      case 'SCREEN_REPLAY_DETECTED':
+        return 'Ataque de suplantación detectado (Pantalla digital / Teléfono móvil)';
+      case 'PAPER_PRINT_DETECTED':
+        return 'Ataque de suplantación detectado (Fotografía impresa)';
+      case 'CLOSE_FRAME_SPOOF_RISK':
+        return 'Rostro o pantalla demasiado cerca del lente (Anti-Spoofing)';
+      case 'FACE_TOO_SMALL':
+        return 'Rostro demasiado pequeño o lejano para validar prueba de vida';
+      default:
+        return 'Ataque de suplantación detectado (Prueba de vida fallida)';
+    }
+  }
+
+  Future<void> _rejectDueToSpoof(FaceScanningState faceState, String reasonCode) async {
+    final description = _describeSpoofReason(reasonCode);
+    showToast(
+      title: 'ALERTA ANTI-SPOOFING: ACCESO BLOQUEADO',
+      message: '$description. Presente su rostro real frente a la cámara.',
+      color: const Color(0xFFEF4444),
+      icon: Icons.gpp_bad_rounded,
+      durationMs: 5000,
+    );
+    final deniedState = await faceState.onSpoofDetected(this, reason: description);
+    transitionTo(deniedState);
+  }
 
   // Propiedades de compatibilidad para evitar roturas
   String get liveMatchedName => _active2FAStudent?.fullName ?? '';
@@ -261,25 +297,42 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
           final state = data['state'] as String? ?? 'IDLE';
           final latencyMs = (data['latency_ms'] as num?)?.toInt() ?? 30;
           final bool faceDetected = data['face_detected'] == true;
+          final bool isLive = state != 'SPOOF_DETECTED' && (data['is_live'] != false);
+          final double livenessScore = (data['liveness_score'] as num?)?.toDouble() ?? (isLive ? 1.0 : 0.0);
+          final String spoofReason = data['spoof_reason'] as String? ?? '';
 
           _liveFaceDetected = faceDetected;
+          _liveIsRealFace = faceDetected ? isLive : true;
+          _liveLivenessScore = livenessScore;
+          _liveSpoofReason = spoofReason;
           _liveCamState = state;
           _liveLatencyMs = latencyMs;
 
-          // Si estamos en verificación facial (FACE_SCANNING), calcular similitud 1:1 contra la trama ingresada
-          if (_currentState is FaceScanningState) {
+          // Si estamos en verificación facial (FACE_SCANNING), calcular similitud 1:1 o bloquear spoofing
+          if (!_isProcessing2FA && _currentState is FaceScanningState) {
             final faceState = _currentState as FaceScanningState;
             _active2FAStudent = faceState.student;
 
-            if (faceDetected) {
+            if (faceDetected && !isLive) {
+              _spoofPollStreak++;
+              if (_spoofPollStreak >= 3) {
+                _spoofPollStreak = 0;
+                await _rejectDueToSpoof(faceState, spoofReason);
+              }
+            } else if (faceDetected && isLive) {
+              _spoofPollStreak = 0;
               try {
                 final vecRes = await _httpClient
                     .get(Uri.parse('http://127.0.0.1:5050/extract_vector'))
                     .timeout(const Duration(milliseconds: 250));
                 if (vecRes.statusCode == 200) {
                   final vecData = jsonDecode(vecRes.body) as Map<String, dynamic>;
+                  final vecStatus = vecData['status'] as String? ?? 'OK';
                   final rawVec = vecData['vector'] as List?;
-                  if (rawVec != null && rawVec.length == 512) {
+                  if (vecStatus == 'OK' &&
+                      vecData['is_live'] != false &&
+                      rawVec != null &&
+                      rawVec.length == 512) {
                     final liveVec = rawVec.map((x) => (x as num).toDouble()).toList();
                     final sim = WhitelistStudent.calculateCosineSimilarity(
                       faceState.student.faceVector512,
@@ -303,9 +356,12 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
                   }
                 }
               } catch (_) {}
+            } else {
+              _spoofPollStreak = 0;
             }
-          } else {
+          } else if (!_isProcessing2FA) {
             // Fuera de FACE_SCANNING no hay trama activa evaluándose
+            _spoofPollStreak = 0;
             _active2FAStudent = null;
             _active2FASimilarity = null;
           }
@@ -443,100 +499,127 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
     );
 
     // 3. Pasar a estado FACE_SCANNING con los datos del alumno
+    _isProcessing2FA = true;
+    _spoofPollStreak = 0;
+    _active2FAStudent = student;
+    _active2FASimilarity = null;
     final faceScanningState = FaceScanningState(
       student: student,
       flowStartTimestampMs: startMs,
     );
     transitionTo(faceScanningState);
 
-    // 4. Evaluar el rostro en vivo frente a la cámara mediante Verificación 1:1 directa
-    List<double>? liveVector;
+    try {
+      // 4. Evaluar rostro vivo + similitud 1:1 frente a la cámara
+      List<double>? liveVector;
+      double bestSimilarity = 0.0;
+      List<double>? bestVector;
+      int spoofFrames = 0;
+      String lastSpoofReason = '';
 
-    // Sondeo reactivo de hasta 15 intentos (3.0 segundos) evaluando similitud en tiempo real
-    double bestSimilarity = 0.0;
-    List<double>? bestVector;
+      for (int attempt = 0; attempt < 15; attempt++) {
+        try {
+          final res = await _httpClient
+              .get(Uri.parse('http://127.0.0.1:5050/extract_vector'))
+              .timeout(const Duration(milliseconds: 300));
 
-    for (int attempt = 0; attempt < 15; attempt++) {
-      try {
-        final res = await _httpClient
-            .get(Uri.parse('http://127.0.0.1:5050/extract_vector'))
-            .timeout(const Duration(milliseconds: 300));
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body) as Map<String, dynamic>;
+            final status = data['status'] as String? ?? '';
+            final rawVec = data['vector'] as List?;
 
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body) as Map<String, dynamic>;
-          final status = data['status'] as String? ?? '';
-          final rawVec = data['vector'] as List?;
+            if (status == 'SPOOF_DETECTED' ||
+                (data['is_live'] == false && status != 'NO_FACE_DETECTED')) {
+              spoofFrames++;
+              lastSpoofReason = data['spoof_reason'] as String? ?? '';
+              if (spoofFrames >= 3) {
+                await _rejectDueToSpoof(faceScanningState, lastSpoofReason);
+                return;
+              }
+            } else if (status == 'OK' &&
+                data['is_live'] != false &&
+                rawVec != null &&
+                rawVec.length == 512) {
+              spoofFrames = 0;
+              final candidateVector = rawVec.map((x) => (x as num).toDouble()).toList();
+              final sim = WhitelistStudent.calculateCosineSimilarity(
+                student.faceVector512,
+                candidateVector,
+              );
+              _active2FASimilarity = sim;
+              notifyListeners();
 
-          if (status == 'OK' && rawVec != null && rawVec.length == 512) {
-            final candidateVector = rawVec.map((x) => (x as num).toDouble()).toList();
-            final sim = WhitelistStudent.calculateCosineSimilarity(
-              student.faceVector512,
-              candidateVector,
-            );
+              if (sim > bestSimilarity) {
+                bestSimilarity = sim;
+                bestVector = candidateVector;
+              }
 
-            if (sim > bestSimilarity) {
-              bestSimilarity = sim;
-              bestVector = candidateVector;
-            }
-
-            // Si la similitud alcanza o supera el 65%, ¡CONCEDER ACCESO INMEDIATAMENTE!
-            if (sim >= 0.65) {
-              liveVector = candidateVector;
-              break;
+              // Si la similitud alcanza o supera el 65%, ¡CONCEDER ACCESO INMEDIATAMENTE!
+              if (sim >= 0.65) {
+                liveVector = candidateVector;
+                break;
+              }
             }
           }
+        } catch (_) {
+          // En caso de micro-retraso transitorio en el socket
         }
-      } catch (_) {
-        // En caso de micro-retraso transitorio en el socket
+        await Future.delayed(const Duration(milliseconds: 150));
       }
-      await Future.delayed(const Duration(milliseconds: 150));
-    }
 
-    if (liveVector == null && bestVector != null) {
-      liveVector = bestVector;
-    }
+      if (liveVector == null && bestVector != null) {
+        liveVector = bestVector;
+      }
 
-    // Si tras 3 segundos no se detectó ningún rostro frente a la cámara:
-    if (liveVector == null || liveVector.length != 512) {
-      showToast(
-        title: 'FACTOR 2 RECHAZADO: SIN ROSTRO',
-        message: 'No se detectó ningún rostro frente a la cámara dentro de la ventana de seguridad (3.0s).',
-        color: const Color(0xFFEF4444),
-        icon: Icons.face_retouching_off,
-        durationMs: 4000,
+      if ((liveVector == null || liveVector.length != 512) && spoofFrames > 0) {
+        await _rejectDueToSpoof(faceScanningState, lastSpoofReason);
+        return;
+      }
+
+      // Si tras 3 segundos no se detectó ningún rostro vivo frente a la cámara:
+      if (liveVector == null || liveVector.length != 512) {
+        showToast(
+          title: 'FACTOR 2 RECHAZADO: SIN ROSTRO',
+          message: 'No se detectó ningún rostro vivo frente a la cámara dentro de la ventana de seguridad (3.0s).',
+          color: const Color(0xFFEF4444),
+          icon: Icons.face_retouching_off,
+          durationMs: 4000,
+        );
+        final timeoutState = await faceScanningState.onTimeout(this);
+        transitionTo(timeoutState);
+        return;
+      }
+
+      // 5. Cálculo Matemático de Similitud Coseno 1:1 final
+      final similarity = WhitelistStudent.calculateCosineSimilarity(
+        student.faceVector512,
+        liveVector,
       );
-      final timeoutState = await faceScanningState.onTimeout(this);
-      transitionTo(timeoutState);
-      return;
-    }
+      final simPercent = (similarity * 100).toStringAsFixed(1);
 
-    // 5. Cálculo Matemático de Similitud Coseno 1:1 final
-    final similarity = WhitelistStudent.calculateCosineSimilarity(
-      student.faceVector512,
-      liveVector,
-    );
-    final simPercent = (similarity * 100).toStringAsFixed(1);
+      // 6. Transición formal en la FSM delegada (guarda en Outbox de forma transaccional)
+      final nextState = await faceScanningState.onFaceScanned(this, liveVector);
+      transitionTo(nextState);
 
-    // 6. Transición formal en la FSM delegada (guarda en Outbox de forma transaccional)
-    final nextState = await faceScanningState.onFaceScanned(this, liveVector);
-    transitionTo(nextState);
-
-    if (nextState is AccessGrantedState) {
-      showToast(
-        title: 'FACTOR 2 VÁLIDO: BIOMETRÍA 1:1 ($simPercent%)',
-        message: 'Rostro coincide con ${student.fullName}. ¡Torniquete Abierto!',
-        color: const Color(0xFF10B981),
-        icon: Icons.verified_user_rounded,
-        durationMs: 4000,
-      );
-    } else {
-      showToast(
-        title: 'FACTOR 2 RECHAZADO: BIOMETRÍA DIVERGENTE ($simPercent%)',
-        message: 'El rostro frente a la cámara no coincide con ${student.fullName} (< 65% umbral).',
-        color: const Color(0xFFEF4444),
-        icon: Icons.block,
-        durationMs: 5000,
-      );
+      if (nextState is AccessGrantedState) {
+        showToast(
+          title: 'FACTOR 2 VÁLIDO: BIOMETRÍA 1:1 ($simPercent%)',
+          message: 'Rostro coincide con ${student.fullName}. ¡Torniquete Abierto!',
+          color: const Color(0xFF10B981),
+          icon: Icons.verified_user_rounded,
+          durationMs: 4000,
+        );
+      } else {
+        showToast(
+          title: 'FACTOR 2 RECHAZADO: BIOMETRÍA DIVERGENTE ($simPercent%)',
+          message: 'El rostro frente a la cámara no coincide con ${student.fullName} (< 65% umbral).',
+          color: const Color(0xFFEF4444),
+          icon: Icons.block,
+          durationMs: 5000,
+        );
+      }
+    } finally {
+      _isProcessing2FA = false;
     }
   }
 

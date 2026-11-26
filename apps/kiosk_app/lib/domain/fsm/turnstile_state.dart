@@ -222,6 +222,63 @@ class FaceScanningState extends TurnstileState {
     return this;
   }
 
+  Future<TurnstileState> _recordDeniedOutcome(
+    TurnstileFsmContext context, {
+    required String auditReason,
+    required String displayReason,
+  }) async {
+    cancelTimeout();
+    final endMs = DateTime.now().millisecondsSinceEpoch;
+    final totalLatencyMs = endMs - flowStartTimestampMs;
+
+    final eventUuid = 'evt-${DateTime.now().microsecondsSinceEpoch}';
+    final nowUtc = DateTime.now().toUtc().toIso8601String();
+    final payloadHash = TurnstileOutboxEvent.calculatePayloadHash(
+      eventUuid: eventUuid,
+      turnstileId: context.turnstileId,
+      studentId: student.studentId,
+      timestamp: nowUtc,
+      result: 'DENIED',
+      latencyMs: totalLatencyMs,
+    );
+
+    final outboxEvent = TurnstileOutboxEvent(
+      eventUuid: eventUuid,
+      turnstileId: context.turnstileId,
+      campusId: context.campusId,
+      studentId: student.studentId,
+      studentRut: student.rut,
+      accessTimestamp: nowUtc,
+      accessResult: AccessResult.denied,
+      denialReason: auditReason,
+      latencyMs: totalLatencyMs,
+      payloadHash: payloadHash,
+      status: OutboxStatus.pending,
+    );
+
+    await context.database.insertOutboxEvent(outboxEvent);
+
+    return AccessDeniedState(
+      studentId: student.studentId,
+      studentName: student.fullName,
+      studentRut: student.rut,
+      denialReason: displayReason,
+      latencyMs: totalLatencyMs,
+    );
+  }
+
+  /// Rechaza por ataque de presentación (foto impresa / pantalla de teléfono)
+  Future<TurnstileState> onSpoofDetected(
+    TurnstileFsmContext context, {
+    String reason = 'Ataque de suplantación detectado (Foto/Pantalla — Anti-Spoofing)',
+  }) {
+    return _recordDeniedOutcome(
+      context,
+      auditReason: reason,
+      displayReason: reason,
+    );
+  }
+
   @override
   Future<TurnstileState> onFaceScanned(
       TurnstileFsmContext context, List<double> capturedVector) async {
@@ -236,7 +293,7 @@ class FaceScanningState extends TurnstileState {
       capturedVector,
     );
 
-    // Umbral de coincidencia biométrica 1:1: >= 0.72
+    // Umbral de coincidencia biométrica 1:1: >= 0.65
     if (similarity >= 0.65) {
       // Registrar evento persistente en Transactional Outbox (status: PENDING)
       final eventUuid = 'evt-${DateTime.now().microsecondsSinceEpoch}';
@@ -271,84 +328,22 @@ class FaceScanningState extends TurnstileState {
         studentRut: student.rut,
         latencyMs: totalLatencyMs,
       );
-    } else {
-      // Rostro no coincide
-      final eventUuid = 'evt-${DateTime.now().microsecondsSinceEpoch}';
-      final nowUtc = DateTime.now().toUtc().toIso8601String();
-      final payloadHash = TurnstileOutboxEvent.calculatePayloadHash(
-        eventUuid: eventUuid,
-        turnstileId: context.turnstileId,
-        studentId: student.studentId,
-        timestamp: nowUtc,
-        result: 'DENIED',
-        latencyMs: totalLatencyMs,
-      );
-
-      final outboxEvent = TurnstileOutboxEvent(
-        eventUuid: eventUuid,
-        turnstileId: context.turnstileId,
-        campusId: context.campusId,
-        studentId: student.studentId,
-        studentRut: student.rut,
-        accessTimestamp: nowUtc,
-        accessResult: AccessResult.denied,
-        denialReason: 'Rostro biométrico no coincide con credencial (Similitud: ${(similarity * 100).toStringAsFixed(1)}%)',
-        latencyMs: totalLatencyMs,
-        payloadHash: payloadHash,
-        status: OutboxStatus.pending,
-      );
-
-      await context.database.insertOutboxEvent(outboxEvent);
-
-      return AccessDeniedState(
-        studentId: student.studentId,
-        studentName: student.fullName,
-        studentRut: student.rut,
-        denialReason: 'Rostro no coincide con el titular legítimo (2FA Inválido)',
-        latencyMs: totalLatencyMs,
-      );
     }
+
+    return _recordDeniedOutcome(
+      context,
+      auditReason:
+          'Rostro biométrico no coincide con credencial (Similitud: ${(similarity * 100).toStringAsFixed(1)}%)',
+      displayReason: 'Rostro no coincide con el titular legítimo (2FA Inválido)',
+    );
   }
 
   @override
-  Future<TurnstileState> onTimeout(TurnstileFsmContext context) async {
-    cancelTimeout();
-    final endMs = DateTime.now().millisecondsSinceEpoch;
-    final totalLatencyMs = endMs - flowStartTimestampMs;
-
-    final eventUuid = 'evt-${DateTime.now().microsecondsSinceEpoch}';
-    final nowUtc = DateTime.now().toUtc().toIso8601String();
-    final payloadHash = TurnstileOutboxEvent.calculatePayloadHash(
-      eventUuid: eventUuid,
-      turnstileId: context.turnstileId,
-      studentId: student.studentId,
-      timestamp: nowUtc,
-      result: 'DENIED',
-      latencyMs: totalLatencyMs,
-    );
-
-    final outboxEvent = TurnstileOutboxEvent(
-      eventUuid: eventUuid,
-      turnstileId: context.turnstileId,
-      campusId: context.campusId,
-      studentId: student.studentId,
-      studentRut: student.rut,
-      accessTimestamp: nowUtc,
-      accessResult: AccessResult.denied,
-      denialReason: 'Tiempo límite de escaneo facial agotado (Timeout 3.5s)',
-      latencyMs: totalLatencyMs,
-      payloadHash: payloadHash,
-      status: OutboxStatus.pending,
-    );
-
-    await context.database.insertOutboxEvent(outboxEvent);
-
-    return AccessDeniedState(
-      studentId: student.studentId,
-      studentName: student.fullName,
-      studentRut: student.rut,
-      denialReason: 'Tiempo límite de escaneo facial agotado (3.5s)',
-      latencyMs: totalLatencyMs,
+  Future<TurnstileState> onTimeout(TurnstileFsmContext context) {
+    return _recordDeniedOutcome(
+      context,
+      auditReason: 'Tiempo límite de escaneo facial agotado (Timeout 3.5s)',
+      displayReason: 'Tiempo límite de escaneo facial agotado (3.5s)',
     );
   }
 

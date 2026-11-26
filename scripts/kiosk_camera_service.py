@@ -66,6 +66,32 @@ else:
     print("[!] AVISO: No se encontró mobilefacenet.onnx en rutas candidatas.")
     net = None
 
+# Modelos Anti-Spoofing (Silent-Face-Anti-Spoofing: MiniFASNetV2 2.7x + MiniFASNetV1SE 4.0x)
+ANTISPOOF_SPECS = [
+    ("2.7_80x80_MiniFASNetV2.onnx", 2.7),
+    ("4_0_0_80x80_MiniFASNetV1SE.onnx", 4.0),
+]
+antispoof_nets = []
+for model_file, scale in ANTISPOOF_SPECS:
+    for candidate_dir in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "models"),
+        os.path.join(PROJECT_ROOT, "scripts", "models"),
+    ]:
+        model_full_path = os.path.join(candidate_dir, model_file)
+        if os.path.exists(model_full_path):
+            try:
+                as_net = cv2.dnn.readNetFromONNX(model_full_path)
+                as_net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                as_net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+                antispoof_nets.append((model_file, scale, as_net))
+                print(f"[+] Modelo Anti-Spoofing cargado ({scale}x): {model_full_path}")
+            except Exception as e:
+                print(f"[!] Error cargando modelo Anti-Spoofing {model_file}: {e}")
+            break
+
+if not antispoof_nets:
+    print("[!] AVISO: No se cargaron modelos Anti-Spoofing ONNX; operando solo con detección YuNet.")
+
 def generate_placeholder_frame(msg="ESPERANDO DISPOSITIVO DE CÁMARA..."):
     img = np.zeros((480, 640, 3), dtype=np.uint8)
     img[:] = (20, 15, 10) # Fondo oscuro azulado
@@ -88,6 +114,9 @@ current_status = {
     "score": 0.0,
     "latency_ms": 0,
     "face_detected": False,
+    "is_live": False,
+    "liveness_score": 0.0,
+    "spoof_reason": "",
     "camera_enabled": True,
     "timestamp": "",
 }
@@ -97,6 +126,7 @@ vector_lock = threading.Lock()
 raw_frame_lock = threading.Lock()
 camera_state_lock = threading.Lock()
 latest_live_vector = None
+latest_liveness_info = {"is_live": False, "liveness_score": 0.0, "spoof_reason": ""}
 latest_raw_frame = None
 
 
@@ -106,7 +136,7 @@ def is_camera_enabled():
 
 
 def set_camera_enabled(enabled: bool):
-    global camera_enabled, latest_live_vector, latest_raw_frame, current_frame_jpeg, current_status
+    global camera_enabled, latest_live_vector, latest_liveness_info, latest_raw_frame, current_frame_jpeg, current_status
     with camera_state_lock:
         camera_enabled = enabled
     if not enabled:
@@ -114,12 +144,16 @@ def set_camera_enabled(enabled: bool):
             latest_raw_frame = None
         with vector_lock:
             latest_live_vector = None
+            latest_liveness_info = {"is_live": False, "liveness_score": 0.0, "spoof_reason": ""}
         with frame_lock:
             current_frame_jpeg = generate_placeholder_frame("CAMARA DESACTIVADA POR EL OPERADOR")
         with status_lock:
             current_status = {
                 "state": "CAMERA_OFF",
                 "face_detected": False,
+                "is_live": False,
+                "liveness_score": 0.0,
+                "spoof_reason": "",
                 "camera_enabled": False,
                 "latency_ms": 0,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -131,10 +165,105 @@ def set_camera_enabled(enabled: bool):
             current_status = {
                 "state": "IDLE",
                 "face_detected": False,
+                "is_live": False,
+                "liveness_score": 0.0,
+                "spoof_reason": "",
                 "camera_enabled": True,
                 "latency_ms": 0,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
+
+def _get_antispoof_crop_box(src_w, src_h, bbox, scale):
+    """Expande el bounding box facial alrededor de su centro respetando los bordes."""
+    x, y, box_w, box_h = bbox
+    safe_w = max(float(box_w), 1.0)
+    safe_h = max(float(box_h), 1.0)
+    bounded_scale = min((src_h - 1) / safe_h, min((src_w - 1) / safe_w, scale))
+
+    new_w = safe_w * bounded_scale
+    new_h = safe_h * bounded_scale
+    cx = float(x) + safe_w / 2.0
+    cy = float(y) + safe_h / 2.0
+
+    x1 = cx - new_w / 2.0
+    y1 = cy - new_h / 2.0
+    x2 = cx + new_w / 2.0
+    y2 = cy + new_h / 2.0
+
+    if x1 < 0:
+        x2 -= x1
+        x1 = 0
+    if y1 < 0:
+        y2 -= y1
+        y1 = 0
+    if x2 > src_w - 1:
+        x1 -= x2 - src_w + 1
+        x2 = src_w - 1
+    if y2 > src_h - 1:
+        y1 -= y2 - src_h + 1
+        y2 = src_h - 1
+
+    return int(max(0, x1)), int(max(0, y1)), int(min(src_w - 1, x2)), int(min(src_h - 1, y2))
+
+def evaluate_liveness(frame_bgr, bbox):
+    """
+    Evalúa prueba de vida pasiva (Anti-Spoofing) mediante MiniFASNetV2 (2.7x) + V1SE (4.0x).
+    Preprocesamiento oficial Silent-Face-Anti-Spoofing: BGR crudo [0, 255] a 80x80.
+    Clases: 0=Paper Photo, 1=Real Face, 2=Screen Photo.
+    """
+    h, w = frame_bgr.shape[:2]
+    _, _, box_w, box_h = bbox
+
+    if box_w < 64 or box_h < 64:
+        return False, 0.0, "FACE_TOO_SMALL"
+
+    # Evitar fotografías pegadas al lente para ocultar los bordes de la pantalla
+    if box_h > h * 0.78 or box_w > w * 0.78:
+        return False, 0.0, "CLOSE_FRAME_SPOOF_RISK"
+
+    if not antispoof_nets:
+        return True, 1.0, ""
+
+    probs_list = []
+    for _, scale, as_net in antispoof_nets:
+        x1, y1, x2, y2 = _get_antispoof_crop_box(w, h, bbox, scale)
+        crop = frame_bgr[y1:y2 + 1, x1:x2 + 1]
+        if crop.size == 0:
+            continue
+        blob = cv2.dnn.blobFromImage(
+            crop,
+            scalefactor=1.0,
+            size=(80, 80),
+            mean=(0, 0, 0),
+            swapRB=False,
+            crop=False,
+        )
+        as_net.setInput(blob)
+        logits = as_net.forward()[0]
+        exp_logits = np.exp(logits - np.max(logits))
+        probs = exp_logits / np.sum(exp_logits)
+        probs_list.append(probs)
+
+    if not probs_list:
+        return False, 0.0, "LIVENESS_CROP_INVALID"
+
+    avg_probs = np.mean(probs_list, axis=0)
+    min_real = min(float(p[1]) for p in probs_list)
+    paper_score = float(avg_probs[0])
+    real_score = float(avg_probs[1])
+    screen_score = float(avg_probs[2])
+
+    is_live = (
+        real_score >= 0.65
+        and min_real >= 0.50
+        and real_score > paper_score
+        and real_score > screen_score
+    )
+    if is_live:
+        return True, real_score, ""
+
+    reason = "SCREEN_REPLAY_DETECTED" if screen_score >= paper_score else "PAPER_PRINT_DETECTED"
+    return False, real_score, reason
 
 def extract_512d_vector(face_img):
     """
@@ -262,31 +391,24 @@ def open_camera():
 
 def biometric_ai_worker():
     """
-    HILO ASÍNCRONO DE INFERENCIA BIOMÉTRICA (~4-5 Hz)
-    Doble estrategia: Detección Dinámica + Fallback Infalible al Encuadre 4:5 (Idéntico a Web).
-    Se ejecuta en segundo plano sin frenar el flujo continuo de video a 30 FPS.
+    HILO ASÍNCRONO DE INFERENCIA BIOMÉTRICA + ANTI-SPOOFING (~5 Hz)
+    Exige detección real YuNet (5 puntos), evalúa prueba de vida pasiva (MiniFASNet)
+    y extrae descriptor 512D únicamente para rostros reales vivos.
     """
-    global current_status, latest_live_vector
-    
-    face_cascade = None
-    if hasattr(cv2, 'CascadeClassifier') and os.path.exists(CASCADE_PATH):
-        try:
-            face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
-        except Exception:
-            face_cascade = None
-
-    students = load_enrolled_students()
-    last_reload_time = time.time()
-    THRESHOLD = 0.65
+    global current_status, latest_live_vector, latest_liveness_info
 
     while True:
         if not is_camera_enabled():
             with vector_lock:
                 latest_live_vector = None
+                latest_liveness_info = {"is_live": False, "liveness_score": 0.0, "spoof_reason": ""}
             with status_lock:
                 current_status = {
                     "state": "CAMERA_OFF",
                     "face_detected": False,
+                    "is_live": False,
+                    "liveness_score": 0.0,
+                    "spoof_reason": "",
                     "camera_enabled": False,
                     "latency_ms": 0,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -303,24 +425,13 @@ def biometric_ai_worker():
             time.sleep(0.04)
             continue
 
-        now = time.time()
-        # Recargar lista blanca de SQLite cada 4 segundos
-        if now - last_reload_time > 4.0:
-            students = load_enrolled_students()
-            last_reload_time = now
-
         start_eval = time.time()
         h, w = frame.shape[:2]
 
-        # 1. Definir Encuadre Biométrico Estandarizado 4:5 (Coincidente con el visor y la Web de Enrolamiento)
-        crop_h = int(min(h * 0.72, w * 0.9))
-        crop_w = int(crop_h * 0.8)
-        start_x = max(0, (w - crop_w) // 2)
-        start_y = max(0, int((h - crop_h) * 0.42))
-
-        # 2. Detección Facial Ligera con YuNet ONNX y Alineamiento Canónico ArcFace (5 Puntos)
+        # Detección facial estricta con YuNet ONNX (sin fallback ciego)
         face_detected = False
         face_crop = None
+        face_bbox = None
 
         if yunet_detector is not None:
             try:
@@ -329,11 +440,14 @@ def biometric_ai_worker():
                 if detected_faces is not None and len(detected_faces) > 0:
                     best_face = detected_faces[0]
                     score = float(best_face[14])
-                    if score >= 0.45:
+                    if score >= 0.55:
                         face_detected = True
-                        # Puntos canónicos ArcFace en 112x112:
-                        # Ojo derecho (38.29, 51.70), Ojo izquierdo (73.53, 51.50), Nariz (56.03, 71.74)
-                        # Comisura der (41.55, 92.37), Comisura izq (70.73, 92.20)
+                        face_bbox = [
+                            float(best_face[0]),
+                            float(best_face[1]),
+                            float(best_face[2]),
+                            float(best_face[3]),
+                        ]
                         src_pts = np.array([
                             [best_face[4], best_face[5]],
                             [best_face[6], best_face[7]],
@@ -353,35 +467,53 @@ def biometric_ai_worker():
                         M, _ = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.LMEDS)
                         if M is not None:
                             face_crop = cv2.warpAffine(frame, M, (112, 112), borderValue=0.0)
-            except Exception as e:
+            except Exception:
                 pass
-
-        # Fallback B: Si YuNet no detectó el rostro, usar encuadre 4:5 central estandarizado
-        if face_crop is None or face_crop.size == 0:
-            fallback_crop = frame[start_y:start_y + crop_h, start_x:start_x + crop_w]
-            if fallback_crop.size > 0 and np.std(fallback_crop) > 18:
-                face_crop = fallback_crop
-                face_detected = True
 
         detected_state = "IDLE"
         latency_ms = 0
+        is_live = False
+        liveness_score = 0.0
+        spoof_reason = ""
 
-        if face_detected and face_crop is not None and face_crop.size > 0:
-            # Inferencia 512D con Flip-Fusion (Sensor Pasivo Puro para Verificación 1:1)
-            live_vec = extract_512d_vector(face_crop)
-            with vector_lock:
-                latest_live_vector = live_vec.tolist()
+        if face_detected and face_crop is not None and face_crop.size > 0 and face_bbox is not None:
+            is_live, liveness_score, spoof_reason = evaluate_liveness(frame, face_bbox)
+
+            if is_live:
+                live_vec = extract_512d_vector(face_crop)
+                with vector_lock:
+                    latest_live_vector = live_vec.tolist()
+                    latest_liveness_info = {
+                        "is_live": True,
+                        "liveness_score": round(liveness_score, 4),
+                        "spoof_reason": "",
+                    }
+                detected_state = "FACE_DETECTED"
+            else:
+                # Fail-closed: nunca entregar vector facial si se detectó ataque de presentación
+                with vector_lock:
+                    latest_live_vector = None
+                    latest_liveness_info = {
+                        "is_live": False,
+                        "liveness_score": round(liveness_score, 4),
+                        "spoof_reason": spoof_reason,
+                    }
+                detected_state = "SPOOF_DETECTED"
+
             latency_ms = int((time.time() - start_eval) * 1000) + 10
-            detected_state = "FACE_DETECTED"
         else:
             with vector_lock:
                 latest_live_vector = None
+                latest_liveness_info = {"is_live": False, "liveness_score": 0.0, "spoof_reason": ""}
             detected_state = "IDLE"
 
         with status_lock:
             current_status = {
                 "state": detected_state,
                 "face_detected": face_detected,
+                "is_live": is_live,
+                "liveness_score": round(liveness_score, 4),
+                "spoof_reason": spoof_reason,
                 "camera_enabled": is_camera_enabled(),
                 "latency_ms": latency_ms if latency_ms > 0 else 30,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -547,11 +679,40 @@ class StreamingHandler(BaseHTTPRequestHandler):
         elif self.path == "/extract_vector":
             with vector_lock:
                 vec = latest_live_vector
-            resp = json.dumps({
-                "status": "OK" if vec is not None else "NO_FACE_DETECTED",
-                "dimensions": len(vec) if vec is not None else 0,
-                "vector": vec if vec is not None else []
-            }).encode("utf-8")
+                liveness = dict(latest_liveness_info)
+            is_live = bool(liveness.get("is_live", False))
+            spoof_reason = liveness.get("spoof_reason", "")
+            liveness_score = float(liveness.get("liveness_score", 0.0))
+
+            if vec is not None and is_live:
+                payload = {
+                    "status": "OK",
+                    "is_live": True,
+                    "liveness_score": liveness_score,
+                    "spoof_reason": "",
+                    "dimensions": len(vec),
+                    "vector": vec,
+                }
+            elif spoof_reason:
+                payload = {
+                    "status": "SPOOF_DETECTED",
+                    "is_live": False,
+                    "liveness_score": liveness_score,
+                    "spoof_reason": spoof_reason,
+                    "dimensions": 0,
+                    "vector": [],
+                }
+            else:
+                payload = {
+                    "status": "NO_FACE_DETECTED",
+                    "is_live": False,
+                    "liveness_score": 0.0,
+                    "spoof_reason": "",
+                    "dimensions": 0,
+                    "vector": [],
+                }
+
+            resp = json.dumps(payload).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")

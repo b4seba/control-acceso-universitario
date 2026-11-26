@@ -86,5 +86,21 @@ void main() {
 
       expect(hash, hasLength(64)); // SHA-256 hex length
     });
+
+    test('AccessDeniedState preserves Anti-Spoofing denial reason cleanly', () {
+      const spoofReason =
+          'Ataque de suplantación detectado (Pantalla digital / Foto móvil — Anti-Spoofing)';
+      final denied = AccessDeniedState(
+        studentId: 'ua-stu-214607093',
+        studentName: 'Estudiante Prueba',
+        studentRut: '214607093',
+        denialReason: spoofReason,
+        latencyMs: 120,
+      );
+
+      expect(denied.type, TurnstileStateType.accessDenied);
+      expect(denied.denialReason, spoofReason);
+      expect(denied.statusMessage, contains('ACCESO DENEGADO'));
+    });
   });
 }
