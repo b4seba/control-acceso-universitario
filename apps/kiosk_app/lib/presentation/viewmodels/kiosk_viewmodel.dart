@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../data/config/backend_config.dart';
 import '../../data/database/turnstile_database.dart';
+import '../../data/grpc/generated/access_control.pb.dart';
+import '../../data/grpc/kiosk_grpc_client.dart';
 import '../../domain/fsm/turnstile_state.dart';
 import '../../domain/models/whitelist_student.dart';
 import '../../data/outbox/outbox_worker.dart';
@@ -145,6 +147,46 @@ class KioskViewModel extends ChangeNotifier implements TurnstileFsmContext {
   }
 
   Future<void> syncWhitelistFromCentral() async {
+    // 1. Intentar sincronización binaria por gRPC (:50051)
+    try {
+      final grpcResp = await KioskGrpcClient.withClient(
+        (client) => client.syncWhitelist(
+          SyncWhitelistRequest(
+            turnstileId: turnstileId,
+            campusId: campusId,
+            lastSyncTimestamp: DateTime.now().toUtc().toIso8601String(),
+          ),
+          options: KioskGrpcClient.authOptions(
+            timeout: const Duration(milliseconds: 2500),
+          ),
+        ),
+      );
+
+      final centralStudents = grpcResp.users
+          .map(
+            (u) => WhitelistStudent(
+              studentId: u.studentId,
+              rut: u.rut,
+              fullName: u.fullName,
+              career: u.career,
+              campus: u.campus,
+              role: u.role.isNotEmpty ? u.role : 'ESTUDIANTE',
+              status: u.enrollmentStatus.isNotEmpty ? u.enrollmentStatus : 'VIGENTE',
+              faceVector512: u.faceVector512.map((v) => v.toDouble()).toList(),
+            ),
+          )
+          .toList();
+
+      final deleted = await database.reconcileWhitelist(centralStudents);
+      if (deleted > 0) {
+        debugPrint('[gRPC SYNC] Reconciliación completada: $deleted estudiantes eliminados de SQLite.');
+      }
+      return;
+    } catch (grpcErr) {
+      debugPrint('[gRPC SYNC] Puerto :50051 no disponible, usando fallback REST: $grpcErr');
+    }
+
+    // 2. Fallback automático a REST (:8080) si gRPC no es alcanzable
     try {
       final res = await _httpClient
           .get(Uri.parse('${BackendConfig.baseUrl}/api/v1/sync/whitelist'))

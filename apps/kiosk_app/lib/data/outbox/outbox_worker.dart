@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/backend_config.dart';
 import '../database/turnstile_database.dart';
+import '../grpc/generated/access_control.pb.dart';
+import '../grpc/kiosk_grpc_client.dart';
 
 class OutboxWorker extends ChangeNotifier {
   final TurnstileDatabase database;
@@ -95,7 +97,58 @@ class OutboxWorker extends ChangeNotifier {
         return;
       }
 
-      // Preparar payload de lote (Batch)
+      // 1. Intentar envío binario de alta velocidad por gRPC (HTTP/2 + Protobuf :50051)
+      bool syncedViaGrpc = false;
+      try {
+        final pbEvents = pendingEvents
+            .map(
+              (e) => OutboxEventProto(
+                eventUuid: e.eventUuid,
+                turnstileId: e.turnstileId,
+                campusId: e.campusId,
+                studentId: e.studentId,
+                studentRut: e.studentRut,
+                accessTimestamp: e.accessTimestamp,
+                accessResult: e.accessResult.code,
+                denialReason: e.denialReason ?? '',
+                latencyMs: e.latencyMs,
+                payloadHash: e.payloadHash,
+              ),
+            )
+            .toList();
+
+        final grpcResp = await KioskGrpcClient.withClient(
+          (client) => client.ingestBatch(
+            BatchIngestRequest(
+              turnstileId: pendingEvents.first.turnstileId,
+              campusId: pendingEvents.first.campusId,
+              dispatchTimestamp: DateTime.now().toUtc().toIso8601String(),
+              eventsCount: pendingEvents.length,
+              events: pbEvents,
+            ),
+            options: KioskGrpcClient.authOptions(
+              timeout: const Duration(seconds: 2),
+            ),
+          ),
+          hostOverride: Uri.tryParse(backendBaseUrl)?.host,
+        );
+
+        if (grpcResp.status == 'ACK_CONFIRMED' && grpcResp.ackMap.isNotEmpty) {
+          final updated = await database.markEventsAsSynced(grpcResp.ackMap);
+          _lastSyncTime = DateTime.now();
+          _lastSyncMessage =
+              'Lote de $updated eventos sincronizado vía gRPC (:50051) con ACK forense.';
+          syncedViaGrpc = true;
+        }
+      } catch (grpcErr) {
+        debugPrint('[Outbox gRPC] Puerto :50051 no disponible, intentando fallback REST: $grpcErr');
+      }
+
+      if (syncedViaGrpc) {
+        return;
+      }
+
+      // 2. Fallback automático a REST (:8080) si gRPC está bloqueado en la red actual
       final batchPayload = {
         'turnstile_id': pendingEvents.first.turnstileId,
         'campus_id': pendingEvents.first.campusId,
@@ -132,7 +185,7 @@ class OutboxWorker extends ChangeNotifier {
 
           final updated = await database.markEventsAsSynced(ackMap);
           _lastSyncTime = DateTime.now();
-          _lastSyncMessage = 'Lote de $updated eventos sincronizado con confirmación ACK forense.';
+          _lastSyncMessage = 'Lote de $updated eventos sincronizado vía REST (:8080) con ACK.';
         }
       }
     } catch (e) {
