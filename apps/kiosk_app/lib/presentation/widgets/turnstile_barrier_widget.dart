@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/kiosk_theme.dart';
 
-/// Airport/transit-inspired software turnstile wayfinding signage block.
-/// Displays crisp OPEN (granted) or CLOSED (standby) status without neon glows.
+/// Bright transit/airport turnstile signage block with bold semantic headers.
 class TurnstileBarrierWidget extends StatefulWidget {
   final bool isOpen;
   final String? studentName;
@@ -58,10 +57,12 @@ class _TurnstileBarrierWidgetState extends State<TurnstileBarrierWidget>
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: widget.isCompact ? 360 : 520),
-      child: widget.isOpen ? _buildOpenSignage() : _buildClosedSignage(),
-    );
+    return widget.isOpen
+        ? ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: widget.isCompact ? 380 : 600),
+            child: _buildOpenSignage(),
+          )
+        : _buildClosedSignage();
   }
 
   Widget _buildOpenSignage() {
@@ -73,159 +74,159 @@ class _TurnstileBarrierWidgetState extends State<TurnstileBarrierWidget>
 
         return Container(
           decoration: BoxDecoration(
-            color: KioskTheme.signalGrantedBg,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: KioskTheme.signalGranted.withValues(alpha: 0.6), width: 1.5),
+            color: KioskTheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: KioskTheme.signalGranted, width: 2),
+            boxShadow: KioskTheme.cardShadow,
           ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+              // Solid vivid green transit header
+              Container(
+                color: KioskTheme.signalGranted,
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+                child: Row(
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.lock_open_rounded, size: 16, color: KioskTheme.signalGrantedText),
-                            SizedBox(width: 8),
-                            Text(
-                              'CONTROL DE ACCESO',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.0,
-                                color: KioskTheme.signalGrantedText,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: KioskTheme.signalGranted,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            'CIERRE ${secondsLeft}s',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                              color: Color(0xFF090A0D),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: KioskTheme.signalGranted,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.arrow_forward_rounded,
-                            size: 28,
-                            color: Color(0xFF090A0D),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'TORNIQUETE ABIERTO',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.6,
-                                  color: KioskTheme.signalGrantedText,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Paso habilitado · Adelante',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: KioskTheme.textWhite,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
-                        color: KioskTheme.industrialBlack.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: KioskTheme.signalGranted.withValues(alpha: 0.25),
-                        ),
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Row(
+                      child: const Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 28,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.studentName ?? 'Estudiante',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: KioskTheme.textWhite,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  widget.studentRut ?? '',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontFamily: 'monospace',
-                                    fontFamilyFallback: KioskTheme.monoFallback,
-                                    fontFeatures: [FontFeature.tabularFigures()],
-                                    color: KioskTheme.signalGrantedText,
-                                  ),
-                                ),
-                              ],
+                          Text(
+                            'TORNIQUETE ABIERTO',
+                            style: TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                              color: Colors.white,
                             ),
                           ),
+                          SizedBox(height: 2),
                           Text(
-                            '${widget.latencyMs} ms',
-                            style: const TextStyle(
+                            'Paso habilitado · Adelante',
+                            style: TextStyle(
                               fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              fontFamily: 'monospace',
-                              fontFamilyFallback: KioskTheme.monoFallback,
-                              fontFeatures: [FontFeature.tabularFigures()],
-                              color: KioskTheme.signalGrantedText,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Text(
+                        'CIERRE ${secondsLeft}s',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                          color: KioskTheme.signalGrantedText,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: KioskTheme.surfaceSubtle,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: KioskTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: KioskTheme.signalGrantedBg,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: const Icon(
+                          Icons.verified_user_rounded,
+                          size: 20,
+                          color: KioskTheme.signalGrantedText,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.studentName ?? 'Estudiante',
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: KioskTheme.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.studentRut ?? '',
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontFamily: 'monospace',
+                                fontFamilyFallback: KioskTheme.monoFallback,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                                color: KioskTheme.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: KioskTheme.signalGrantedBg,
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: Text(
+                          '${widget.latencyMs} ms',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'monospace',
+                            fontFamilyFallback: KioskTheme.monoFallback,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                            color: KioskTheme.signalGrantedText,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
               LinearProgressIndicator(
                 value: progress,
-                minHeight: 4,
-                backgroundColor: KioskTheme.industrialBlack,
+                minHeight: 5,
+                backgroundColor: KioskTheme.surfaceMuted,
                 valueColor: const AlwaysStoppedAnimation<Color>(KioskTheme.signalGranted),
               ),
             ],
@@ -237,26 +238,26 @@ class _TurnstileBarrierWidgetState extends State<TurnstileBarrierWidget>
 
   Widget _buildClosedSignage() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: KioskTheme.industrialSurface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: KioskTheme.industrialBorderStrong, width: 1),
+        color: KioskTheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: KioskTheme.border),
+        boxShadow: KioskTheme.cardShadow,
       ),
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: KioskTheme.signalDeniedBg,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: KioskTheme.signalDenied.withValues(alpha: 0.35)),
             ),
             child: const Icon(
               Icons.lock_rounded,
-              size: 20,
-              color: KioskTheme.signalDenied,
+              size: 22,
+              color: KioskTheme.signalDeniedText,
             ),
           ),
           const SizedBox(width: 14),
@@ -269,8 +270,8 @@ class _TurnstileBarrierWidgetState extends State<TurnstileBarrierWidget>
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                    color: KioskTheme.textWhite,
+                    letterSpacing: 0.4,
+                    color: KioskTheme.textPrimary,
                   ),
                 ),
                 SizedBox(height: 2),
@@ -278,26 +279,25 @@ class _TurnstileBarrierWidgetState extends State<TurnstileBarrierWidget>
                   'Esperando credencial NFC / QR (2FA)',
                   style: TextStyle(
                     fontSize: 12,
-                    color: KioskTheme.textGrey,
+                    color: KioskTheme.textSecondary,
                   ),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
             decoration: BoxDecoration(
-              color: KioskTheme.signalDeniedBg,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: KioskTheme.signalDenied.withValues(alpha: 0.35)),
+              color: KioskTheme.signalDenied,
+              borderRadius: BorderRadius.circular(7),
             ),
             child: const Text(
               'BLOQUEADO',
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-                color: KioskTheme.signalDenied,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+                color: Colors.white,
               ),
             ),
           ),

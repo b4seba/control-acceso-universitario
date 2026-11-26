@@ -60,35 +60,48 @@ class _KioskMainViewState extends State<KioskMainView> {
     final outboxWorker = context.watch<OutboxWorker>();
     final currentState = kioskVm.currentState;
     final railColor = _stateRailColor(currentState.type);
+    final isWideViewport = MediaQuery.sizeOf(context).width >= 760;
 
     return Scaffold(
-      backgroundColor: KioskTheme.industrialBlack,
+      backgroundColor: KioskTheme.canvas,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Crisp top 4px FSM status rail (replaces full-screen pulsing neon halo)
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              height: 4,
+              height: 5,
               color: railColor,
             ),
 
             KioskHeaderBar(kioskVm: kioskVm, outboxWorker: outboxWorker),
 
             if (kioskVm.currentToast != null)
-              KioskDiagnosticToast(
-                toast: kioskVm.currentToast!,
-                onDismiss: kioskVm.clearToast,
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1120),
+                  child: KioskDiagnosticToast(
+                    toast: kioskVm.currentToast!,
+                    onDismiss: kioskVm.clearToast,
+                  ),
+                ),
               ),
 
             Expanded(
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  child: KioskStateCenter(
-                    state: currentState,
-                    kioskVm: kioskVm,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isWideViewport ? 32 : 16,
+                    vertical: isWideViewport ? 24 : 16,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1060),
+                      child: KioskStateCenter(
+                        state: currentState,
+                        kioskVm: kioskVm,
+                      ),
+                    ),
                   ),
                 ),
               ),

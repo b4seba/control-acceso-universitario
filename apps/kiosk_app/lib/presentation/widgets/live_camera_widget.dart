@@ -5,8 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../data/camera/camera_engine_service.dart';
 import '../theme/kiosk_theme.dart';
 
-/// Live biometric camera viewport consuming real-time JPEG frames
-/// from http://127.0.0.1:5050/snapshot with restrained industrial framing.
+/// Live optical biometric camera viewport inside a crisp light hardware bezel.
 class LiveCameraWidget extends StatefulWidget {
   final double width;
   final double height;
@@ -16,7 +15,7 @@ class LiveCameraWidget extends StatefulWidget {
 
   const LiveCameraWidget({
     super.key,
-    this.width = 280,
+    this.width = 320,
     this.height = 280,
     this.haloColor = KioskTheme.signalScanning,
     this.showOverlayGuides = true,
@@ -102,32 +101,41 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = _isConnected ? widget.haloColor.withValues(alpha: 0.7) : KioskTheme.industrialBorderStrong;
+    final borderColor = _isConnected
+        ? widget.haloColor.withValues(alpha: 0.65)
+        : KioskTheme.borderStrong;
 
     return Container(
       width: widget.width,
       height: widget.height,
-      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0C10),
-        borderRadius: BorderRadius.circular(16),
+        color: KioskTheme.surface,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: KioskTheme.cardShadow,
       ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (_isConnected && _frameBytes != null)
-            Image.memory(
-              _frameBytes!,
-              gaplessPlayback: true,
-              fit: BoxFit.cover,
-            )
-          else
-            _buildDisconnectedPlaceholder(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Container(
+          color: _isConnected ? const Color(0xFF0F172A) : KioskTheme.surfaceSubtle,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_isConnected && _frameBytes != null)
+                Image.memory(
+                  _frameBytes!,
+                  gaplessPlayback: true,
+                  fit: BoxFit.cover,
+                )
+              else
+                _buildDisconnectedPlaceholder(),
 
-          if (widget.showOverlayGuides && _isConnected)
-            _buildCleanReticleOverlay(context),
-        ],
+              if (widget.showOverlayGuides && _isConnected)
+                _buildCleanReticleOverlay(context),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -139,38 +147,49 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _isStartingEngine
-                ? const SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(KioskTheme.signalScanning),
-                    ),
-                  )
-                : const Icon(
-                    Icons.videocam_off_rounded,
-                    size: 40,
-                    color: KioskTheme.textMuted,
-                  ),
-            const SizedBox(height: 12),
+            Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: KioskTheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: KioskTheme.border),
+              ),
+              child: Center(
+                child: _isStartingEngine
+                    ? const SizedBox(
+                        width: 26,
+                        height: 26,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(KioskTheme.signalScanning),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.videocam_off_rounded,
+                        size: 28,
+                        color: KioskTheme.textSecondary,
+                      ),
+              ),
+            ),
+            const SizedBox(height: 14),
             Text(
-              _isStartingEngine ? 'INICIANDO MOTOR ÓPTICO' : 'SENSOR FACIAL EN ESPERA',
+              _isStartingEngine ? 'INICIANDO SENSOR ÓPTICO' : 'SENSOR FACIAL EN ESPERA',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
-                color: KioskTheme.textWhite,
+                letterSpacing: 0.6,
+                color: KioskTheme.textPrimary,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
             Text(
               _isStartingEngine
-                  ? 'Preparando red neuronal edge 512D...'
-                  : 'Servicio local listo para captura',
+                  ? 'Preparando red neuronal Edge 512D...'
+                  : 'Motor biométrico local listo para captura',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, color: KioskTheme.textGrey),
+              style: const TextStyle(fontSize: 11.5, color: KioskTheme.textSecondary),
             ),
             const SizedBox(height: 14),
             OutlinedButton.icon(
@@ -186,51 +205,47 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
 
   Widget _buildCleanReticleOverlay(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final guideColor = Colors.white.withValues(alpha: 0.72);
+    final guideColor = Colors.white.withValues(alpha: 0.78);
+    final innerW = widget.width - 16;
+    final innerH = widget.height - 16;
 
     return Stack(
       children: [
-        // Subtle matte oval silhouette frame
         Center(
           child: Container(
-            width: widget.width * 0.56,
-            height: widget.height * 0.70,
+            width: innerW * 0.56,
+            height: innerH * 0.70,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.all(
-                Radius.elliptical(widget.width * 0.56, widget.height * 0.70),
+                Radius.elliptical(innerW * 0.56, innerH * 0.70),
               ),
               border: Border.all(
                 color: guideColor.withValues(alpha: 0.55),
-                width: 1.2,
+                width: 1.4,
               ),
             ),
           ),
         ),
-
-        // Subtle hairline scan indicator (no glow blur, disabled under reduced motion)
         if (!reduceMotion)
           AnimatedBuilder(
             animation: _scanController,
             builder: (context, _) {
-              final double topPos =
-                  (widget.height * 0.16) + ((widget.height * 0.66) * _scanController.value);
+              final double topPos = (innerH * 0.16) + ((innerH * 0.66) * _scanController.value);
               return Positioned(
                 top: topPos,
-                left: widget.width * 0.14,
-                right: widget.width * 0.14,
+                left: innerW * 0.14,
+                right: innerW * 0.14,
                 child: Container(
-                  height: 1.5,
-                  color: widget.haloColor.withValues(alpha: 0.65),
+                  height: 2,
+                  color: widget.haloColor.withValues(alpha: 0.8),
                 ),
               );
             },
           ),
-
-        // Clean architectural corner brackets
-        _buildCorner(top: 12, left: 12, isTop: true, isLeft: true, color: guideColor),
-        _buildCorner(top: 12, right: 12, isTop: true, isLeft: false, color: guideColor),
-        _buildCorner(bottom: 12, left: 12, isTop: false, isLeft: true, color: guideColor),
-        _buildCorner(bottom: 12, right: 12, isTop: false, isLeft: false, color: guideColor),
+        _buildCorner(top: 10, left: 10, isTop: true, isLeft: true, color: guideColor),
+        _buildCorner(top: 10, right: 10, isTop: true, isLeft: false, color: guideColor),
+        _buildCorner(bottom: 10, left: 10, isTop: false, isLeft: true, color: guideColor),
+        _buildCorner(bottom: 10, right: 10, isTop: false, isLeft: false, color: guideColor),
       ],
     );
   }
@@ -254,10 +269,10 @@ class _LiveCameraWidgetState extends State<LiveCameraWidget>
         height: 16,
         decoration: BoxDecoration(
           border: Border(
-            top: isTop ? BorderSide(color: color, width: 2) : BorderSide.none,
-            bottom: !isTop ? BorderSide(color: color, width: 2) : BorderSide.none,
-            left: isLeft ? BorderSide(color: color, width: 2) : BorderSide.none,
-            right: !isLeft ? BorderSide(color: color, width: 2) : BorderSide.none,
+            top: isTop ? BorderSide(color: color, width: 2.2) : BorderSide.none,
+            bottom: !isTop ? BorderSide(color: color, width: 2.2) : BorderSide.none,
+            left: isLeft ? BorderSide(color: color, width: 2.2) : BorderSide.none,
+            right: !isLeft ? BorderSide(color: color, width: 2.2) : BorderSide.none,
           ),
         ),
       ),
