@@ -25,23 +25,22 @@ export default function EnrollmentForm({
   const [showPassword, setShowPassword] = useState(false);
 
   const inputBaseClass =
-    'w-full min-h-[46px] sm:min-h-[42px] pl-10 pr-4 py-2.5 sm:py-2 rounded-lg bg-surface border border-border-strong text-base sm:text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-crimson focus:ring-1 focus:ring-crimson transition-colors duration-150';
+    'w-full min-h-[42px] pl-10 pr-4 py-2 rounded-lg bg-surface border border-border-strong text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-crimson focus:ring-1 focus:ring-crimson transition-colors duration-150';
 
   return (
     <section
-      id="ficha-enrolamiento"
       aria-labelledby="enrollment-form-title"
-      className="lg:col-span-5 min-w-0 bg-surface rounded-xl border border-hairline p-4 sm:p-6"
+      className="lg:col-span-5 bg-surface rounded-xl border border-hairline p-5 sm:p-6"
     >
-      <div className="flex items-center gap-2.5 pb-3.5 sm:pb-4 mb-4 sm:mb-5 border-b border-hairline">
-        <span className="w-8 h-8 rounded-lg bg-subtle border border-hairline flex items-center justify-center text-crimson shrink-0">
+      <div className="flex items-center gap-2.5 pb-4 mb-5 border-b border-hairline">
+        <span className="w-8 h-8 rounded-lg bg-subtle border border-hairline flex items-center justify-center text-crimson">
           <Database className="w-4 h-4" aria-hidden="true" />
         </span>
-        <div className="min-w-0">
-          <h2 id="enrollment-form-title" className="text-sm sm:text-base font-semibold text-ink leading-tight">
+        <div>
+          <h2 id="enrollment-form-title" className="text-base font-semibold text-ink leading-tight">
             Ficha Académica SIRAD
           </h2>
-          <p className="text-xs text-ink-secondary leading-snug">
+          <p className="text-xs text-ink-secondary">
             Registro relacional en PostgreSQL 16 + índice Qdrant
           </p>
         </div>
@@ -54,13 +53,11 @@ export default function EnrollmentForm({
             RUT Institucional <span className="text-crimson" aria-hidden="true">*</span>
           </label>
           <div className="relative">
-            <User className="w-4 h-4 text-ink-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+            <User className="w-4 h-4 text-ink-muted absolute left-3.5 top-3 pointer-events-none" aria-hidden="true" />
             <input
               id="field-rut"
               type="text"
               required
-              autoComplete="off"
-              autoCapitalize="characters"
               value={formData.rut}
               onChange={(e) => onChangeField('rut', e.target.value)}
               className={`${inputBaseClass} font-mono`}
@@ -75,12 +72,11 @@ export default function EnrollmentForm({
             Nombre Completo <span className="text-crimson" aria-hidden="true">*</span>
           </label>
           <div className="relative">
-            <User className="w-4 h-4 text-ink-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+            <User className="w-4 h-4 text-ink-muted absolute left-3.5 top-3 pointer-events-none" aria-hidden="true" />
             <input
               id="field-fullname"
               type="text"
               required
-              autoComplete="name"
               value={formData.fullName}
               onChange={(e) => onChangeField('fullName', e.target.value)}
               className={inputBaseClass}
@@ -95,12 +91,11 @@ export default function EnrollmentForm({
             Carrera <span className="text-crimson" aria-hidden="true">*</span>
           </label>
           <div className="relative">
-            <School className="w-4 h-4 text-ink-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+            <School className="w-4 h-4 text-ink-muted absolute left-3.5 top-3 pointer-events-none" aria-hidden="true" />
             <input
               id="field-career"
               type="text"
               required
-              autoComplete="off"
               value={formData.career}
               onChange={(e) => onChangeField('career', e.target.value)}
               className={inputBaseClass}
@@ -115,22 +110,21 @@ export default function EnrollmentForm({
             Contraseña SIRAD <span className="text-crimson" aria-hidden="true">*</span>
           </label>
           <div className="relative">
-            <Lock className="w-4 h-4 text-ink-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
+            <Lock className="w-4 h-4 text-ink-muted absolute left-3.5 top-3 pointer-events-none" aria-hidden="true" />
             <input
               id="field-password"
               type={showPassword ? 'text' : 'password'}
               required
-              autoComplete="new-password"
               value={formData.password}
               onChange={(e) => onChangeField('password', e.target.value)}
-              className={`${inputBaseClass} pr-12`}
+              className={`${inputBaseClass} pr-11`}
               placeholder="Crea una contraseña de acceso"
             />
             <button
               type="button"
               onClick={() => setShowPassword((prev) => !prev)}
               aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-              className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 rounded-md text-ink-secondary hover:text-ink hover:bg-subtle flex items-center justify-center transition-colors duration-150"
+              className="absolute right-1.5 top-1 w-9 h-9 rounded-md text-ink-secondary hover:text-ink hover:bg-subtle flex items-center justify-center transition-colors duration-150"
             >
               {showPassword ? (
                 <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -145,7 +139,7 @@ export default function EnrollmentForm({
         <button
           type="submit"
           disabled={isSubmitting || !vector512}
-          className={`w-full mt-2 min-h-[48px] sm:min-h-[46px] py-3 px-4 rounded-lg font-semibold text-sm leading-snug text-center flex items-center justify-center gap-2 transition-colors duration-150 ${
+          className={`w-full mt-2 min-h-[46px] py-3 px-4 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition-colors duration-150 ${
             !vector512
               ? 'bg-subtle text-ink-muted border border-hairline cursor-not-allowed'
               : 'bg-crimson hover:bg-crimson-hover text-white'
@@ -153,25 +147,25 @@ export default function EnrollmentForm({
         >
           {isSubmitting ? (
             <>
-              <RefreshCw className="w-4 h-4 shrink-0 animate-spin" aria-hidden="true" />
+              <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
               <span>Persistiendo en PostgreSQL + Qdrant...</span>
             </>
           ) : !vector512 ? (
             <>
-              <Lock className="w-4 h-4 shrink-0 text-warning" aria-hidden="true" />
+              <Lock className="w-4 h-4 text-warning" aria-hidden="true" />
               <span>Capture el rostro (512D) para habilitar</span>
             </>
           ) : (
             <>
-              <Database className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <Database className="w-4 h-4" aria-hidden="true" />
               <span>Enrolar y Guardar</span>
             </>
           )}
         </button>
 
         {!vector512 && (
-          <p className="text-xs text-ink-secondary flex items-start gap-1.5 pt-0.5 leading-relaxed">
-            <AlertCircle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" aria-hidden="true" />
+          <p className="text-xs text-ink-secondary flex items-center gap-1.5 pt-0.5">
+            <AlertCircle className="w-3.5 h-3.5 text-warning shrink-0" aria-hidden="true" />
             <span>
               Presione &ldquo;Capturar Rostro y Extraer Vector 512D&rdquo; en la estación óptica para desbloquear el envío.
             </span>
@@ -182,7 +176,7 @@ export default function EnrollmentForm({
       {/* Resultado de la Persistencia */}
       {submitResult && (
         <div
-          className={`mt-5 p-3.5 sm:p-4 rounded-lg border text-xs animate-fadeIn ${
+          className={`mt-5 p-4 rounded-lg border text-xs animate-fadeIn ${
             submitResult.success
               ? 'bg-canvas border-hairline'
               : 'bg-danger-bg border-danger/30'
@@ -196,23 +190,23 @@ export default function EnrollmentForm({
               </div>
 
               <dl className="divide-y divide-hairline font-mono text-[11px] bg-surface rounded-md border border-hairline px-3">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 gap-0.5 sm:gap-2">
+                <div className="flex justify-between py-2 gap-2">
                   <dt className="text-ink-secondary">PostgreSQL 16 (users_rbac)</dt>
-                  <dd className="text-success font-semibold sm:text-right">GUARDADO</dd>
+                  <dd className="text-success font-semibold">GUARDADO</dd>
                 </div>
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 gap-0.5 sm:gap-2">
+                <div className="flex justify-between py-2 gap-2">
                   <dt className="text-ink-secondary">Qdrant (512D Cosine)</dt>
-                  <dd className="text-success font-semibold sm:text-right">INDEXADO</dd>
+                  <dd className="text-success font-semibold">INDEXADO</dd>
                 </div>
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 gap-0.5 sm:gap-2">
+                <div className="flex justify-between py-2 gap-2">
                   <dt className="text-ink-secondary">SQLite WAL (Edge)</dt>
-                  <dd className={`sm:text-right ${submitResult.sqlite ? 'text-success font-semibold' : 'text-ink-secondary'}`}>
+                  <dd className={submitResult.sqlite ? 'text-success font-semibold' : 'text-ink-secondary'}>
                     {submitResult.sqlite ? 'SINCRONIZADO' : 'SYNC DISPONIBLE'}
                   </dd>
                 </div>
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2 gap-0.5 sm:gap-2">
+                <div className="flex justify-between py-2 gap-2">
                   <dt className="text-ink-secondary">ID Estudiante</dt>
-                  <dd className="text-ink font-semibold break-all sm:text-right">{submitResult.data.student_id}</dd>
+                  <dd className="text-ink font-semibold">{submitResult.data.student_id}</dd>
                 </div>
               </dl>
             </div>
@@ -222,7 +216,7 @@ export default function EnrollmentForm({
                 <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span>No se pudo registrar en PostgreSQL 16</span>
               </div>
-              <p className="text-[11px] text-danger font-mono bg-surface p-2.5 rounded border border-danger/25 break-words">
+              <p className="text-[11px] text-danger font-mono bg-surface p-2.5 rounded border border-danger/25">
                 {submitResult.errorMsg || 'Error interno del servidor'}
               </p>
             </div>

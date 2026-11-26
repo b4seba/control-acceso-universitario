@@ -60,48 +60,35 @@ class _KioskMainViewState extends State<KioskMainView> {
     final outboxWorker = context.watch<OutboxWorker>();
     final currentState = kioskVm.currentState;
     final railColor = _stateRailColor(currentState.type);
-    final isWideViewport = MediaQuery.sizeOf(context).width >= 760;
 
     return Scaffold(
-      backgroundColor: KioskTheme.canvas,
+      backgroundColor: KioskTheme.industrialBlack,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Crisp top 4px FSM status rail (replaces full-screen pulsing neon halo)
             AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              height: 5,
+              height: 4,
               color: railColor,
             ),
 
             KioskHeaderBar(kioskVm: kioskVm, outboxWorker: outboxWorker),
 
             if (kioskVm.currentToast != null)
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1120),
-                  child: KioskDiagnosticToast(
-                    toast: kioskVm.currentToast!,
-                    onDismiss: kioskVm.clearToast,
-                  ),
-                ),
+              KioskDiagnosticToast(
+                toast: kioskVm.currentToast!,
+                onDismiss: kioskVm.clearToast,
               ),
 
             Expanded(
               child: Center(
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isWideViewport ? 32 : 16,
-                    vertical: isWideViewport ? 24 : 16,
-                  ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1060),
-                      child: KioskStateCenter(
-                        state: currentState,
-                        kioskVm: kioskVm,
-                      ),
-                    ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  child: KioskStateCenter(
+                    state: currentState,
+                    kioskVm: kioskVm,
                   ),
                 ),
               ),

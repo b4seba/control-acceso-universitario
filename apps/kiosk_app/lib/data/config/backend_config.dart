@@ -20,16 +20,6 @@ class BackendConfig {
 
   static String get baseUrl => _activeBaseUrl;
 
-  static String get grpcHost {
-    final parsed = Uri.tryParse(_activeBaseUrl);
-    if (parsed != null && parsed.host.isNotEmpty) {
-      return parsed.host;
-    }
-    return 'localhost';
-  }
-
-  static const int grpcPort = 50051;
-
   /// Resuelve el backend activo probando Lab 410, Tailscale y localhost.
   /// Si se definió API_BASE_URL vía --dart-define, respeta ese valor sin sondeo.
   static Future<String> resolveActiveBackend({bool force = false}) async {

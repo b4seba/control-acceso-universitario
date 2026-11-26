@@ -23,26 +23,26 @@ export default function ConfirmDeleteModal({ student, isDeleting, onCancel, onCo
           </p>
 
           <dl className="divide-y divide-hairline rounded-lg border border-hairline bg-canvas text-xs px-3.5">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2.5 gap-0.5 sm:gap-2">
+            <div className="flex justify-between py-2 gap-2">
               <dt className="text-ink-secondary">Nombre</dt>
-              <dd className="font-semibold text-ink break-words sm:text-right">{student.full_name}</dd>
+              <dd className="font-semibold text-ink">{student.full_name}</dd>
             </div>
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2.5 gap-0.5 sm:gap-2 font-mono">
+            <div className="flex justify-between py-2 gap-2 font-mono">
               <dt className="text-ink-secondary font-sans">RUT</dt>
-              <dd className="text-ink sm:text-right">{student.rut}</dd>
+              <dd className="text-ink">{student.rut}</dd>
             </div>
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-2.5 gap-0.5 sm:gap-2 font-mono">
+            <div className="flex justify-between py-2 gap-2 font-mono">
               <dt className="text-ink-secondary font-sans">ID</dt>
-              <dd className="text-ink break-all sm:text-right">{student.student_id}</dd>
+              <dd className="text-ink">{student.student_id}</dd>
             </div>
           </dl>
 
-          <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5 pt-1">
+          <div className="flex items-center justify-end gap-2.5 pt-1">
             <button
               type="button"
               onClick={onCancel}
               disabled={isDeleting}
-              className="w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-lg border border-border-strong bg-surface hover:bg-subtle text-ink font-semibold text-xs transition-colors duration-150"
+              className="min-h-[40px] px-4 py-2 rounded-lg border border-border-strong bg-surface hover:bg-subtle text-ink font-semibold text-xs transition-colors duration-150"
             >
               Cancelar
             </button>
@@ -50,7 +50,7 @@ export default function ConfirmDeleteModal({ student, isDeleting, onCancel, onCo
               type="button"
               onClick={() => onConfirm(student)}
               disabled={isDeleting}
-              className="w-full sm:w-auto min-h-[44px] sm:min-h-[40px] px-4 py-2 rounded-lg bg-danger hover:bg-danger/90 text-white font-semibold text-xs transition-colors duration-150 disabled:opacity-60"
+              className="min-h-[40px] px-4 py-2 rounded-lg bg-danger hover:bg-danger/90 text-white font-semibold text-xs transition-colors duration-150 disabled:opacity-60"
             >
               {isDeleting ? 'Eliminando...' : 'Eliminar permanentemente'}
             </button>

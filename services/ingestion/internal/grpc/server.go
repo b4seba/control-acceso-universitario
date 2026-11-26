@@ -14,7 +14,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"cl.uautonoma.acceso/ingestion/internal/crypto"
-	"cl.uautonoma.acceso/ingestion/internal/grpc/pb"
 	"cl.uautonoma.acceso/ingestion/internal/models"
 	"cl.uautonoma.acceso/ingestion/internal/repository"
 	"cl.uautonoma.acceso/ingestion/internal/workerpool"
@@ -22,7 +21,6 @@ import (
 
 // TurnstileGRPCServer gestiona conexiones binarias HTTP/2 de alta velocidad para torniquetes Edge
 type TurnstileGRPCServer struct {
-	pb.UnimplementedTurnstileIngestServiceServer
 	pool       *workerpool.WorkerPool
 	repo       repository.RepositoryInterface
 	qdrant     *repository.QdrantClient
@@ -47,7 +45,6 @@ func NewTurnstileGRPCServer(
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(s.jwtAuthInterceptor),
 	)
-	pb.RegisterTurnstileIngestServiceServer(server, s)
 
 	s.grpcServer = server
 	return s
@@ -110,134 +107,13 @@ func (s *TurnstileGRPCServer) Stop() {
 	}
 }
 
-// IngestBatch recibe un lote de eventos desde el Outbox de los torniquetes vía gRPC
-func (s *TurnstileGRPCServer) IngestBatch(ctx context.Context, req *pb.BatchIngestRequest) (*pb.BatchIngestResponse, error) {
-	if req == nil || len(req.Events) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "el lote de eventos outbox no puede estar vacío")
-	}
-
-	events := make([]models.OutboxEvent, 0, len(req.Events))
-	for _, e := range req.Events {
-		var reason *string
-		if e.DenialReason != "" {
-			r := e.DenialReason
-			reason = &r
-		}
-		events = append(events, models.OutboxEvent{
-			EventUUID:       e.EventUuid,
-			TurnstileID:     e.TurnstileId,
-			CampusID:        e.CampusId,
-			StudentID:       e.StudentId,
-			StudentRUT:      e.StudentRut,
-			AccessTimestamp: e.AccessTimestamp,
-			AccessResult:    e.AccessResult,
-			DenialReason:    reason,
-			LatencyMs:       int(e.LatencyMs),
-			PayloadHash:     e.PayloadHash,
-			Status:          "PENDING",
-		})
-	}
-
-	batch := models.BatchRequest{
-		TurnstileID:       req.TurnstileId,
-		CampusID:          req.CampusId,
-		DispatchTimestamp: req.DispatchTimestamp,
-		EventsCount:       int(req.EventsCount),
-		Events:            events,
-	}
-
+// IngestBatchHandler procesa un lote de eventos desde torniquetes perimetrales
+func (s *TurnstileGRPCServer) IngestBatchHandler(ctx context.Context, batch models.BatchRequest) (*models.BatchResponse, error) {
+	// Enviar al Worker Pool para amortiguar la Tormenta de Reconexión
 	res, err := s.pool.Submit(batch)
 	if err != nil {
 		return nil, status.Errorf(codes.ResourceExhausted, "Worker Pool saturado: %v", err)
 	}
 
-	log.Printf("[gRPC] IngestBatch OK: turnstile=%s events=%d time=%s", req.TurnstileId, res.BatchSize, res.ExecutionTime)
-	return &pb.BatchIngestResponse{
-		Status:        res.Status,
-		ProcessedAt:   res.ProcessedAt.Format(time.RFC3339),
-		BatchSize:     int32(res.BatchSize),
-		AckMap:        res.AckMap,
-		ExecutionTime: res.ExecutionTime,
-	}, nil
-}
-
-// SyncWhitelist entrega los usuarios enrolados y sus vectores 512D al Kiosko vía gRPC
-func (s *TurnstileGRPCServer) SyncWhitelist(ctx context.Context, req *pb.SyncWhitelistRequest) (*pb.SyncWhitelistResponse, error) {
-	users, err := s.repo.GetAllUsers(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "error al consultar usuarios: %v", err)
-	}
-
-	vectorsByID := make(map[string][]float32)
-	if s.qdrant != nil {
-		for _, vr := range s.qdrant.GetAllVectors() {
-			vectorsByID[vr.StudentID] = vr.Vector
-		}
-	}
-
-	pbUsers := make([]*pb.WhitelistUserProto, 0, len(users))
-	for _, u := range users {
-		vec := vectorsByID[u.StudentID]
-		if len(vec) != 512 {
-			vec = repository.GenerateDeterministicVector(u.StudentID)
-		}
-		pbUsers = append(pbUsers, &pb.WhitelistUserProto{
-			StudentId:        u.StudentID,
-			Rut:              u.RUT,
-			FullName:         u.FullName,
-			Role:             u.Role,
-			Career:           u.Career,
-			Campus:           u.Campus,
-			EnrollmentStatus: u.EnrollmentStatus,
-			FaceVector_512:   vec,
-		})
-	}
-
-	log.Printf("[gRPC] SyncWhitelist OK: turnstile=%s users=%d", req.GetTurnstileId(), len(pbUsers))
-	return &pb.SyncWhitelistResponse{
-		TotalUsers:    int32(len(pbUsers)),
-		Users:         pbUsers,
-		SyncTimestamp: time.Now().UTC().Format(time.RFC3339),
-	}, nil
-}
-
-// VerifyBiometric ejecuta verificación biométrica contra Qdrant vía gRPC
-func (s *TurnstileGRPCServer) VerifyBiometric(ctx context.Context, req *pb.BiometricVerifyRequest) (*pb.BiometricVerifyResponse, error) {
-	if len(req.LiveVector_512) != 512 {
-		return nil, status.Error(codes.InvalidArgument, "el vector facial debe tener exactamente 512 dimensiones")
-	}
-
-	if s.qdrant == nil {
-		return nil, status.Error(codes.Unavailable, "Qdrant no disponible")
-	}
-
-	match, score, err := s.qdrant.SearchSimilarVector(ctx, req.LiveVector_512, 0.65)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "error buscando vector en Qdrant: %v", err)
-	}
-
-	if match == nil {
-		return &pb.BiometricVerifyResponse{
-			Match:           false,
-			SimilarityScore: float32(score),
-			Status:          "NO_MATCH",
-		}, nil
-	}
-
-	return &pb.BiometricVerifyResponse{
-		Match:           true,
-		SimilarityScore: float32(score),
-		StudentName:     match.StudentID,
-		Status:          "MATCH_CONFIRMED",
-	}, nil
-}
-
-// HealthCheck reporta la salud del servicio gRPC y profundidad del Worker Pool
-func (s *TurnstileGRPCServer) HealthCheck(ctx context.Context, req *pb.HealthCheckRequest) (*pb.HealthCheckResponse, error) {
-	return &pb.HealthCheckResponse{
-		Status:        "HEALTHY",
-		QueueDepth:    int32(s.pool.QueueDepth()),
-		ActiveWorkers: 16,
-		Uptime:        time.Since(s.startTime).String(),
-	}, nil
+	return &res, nil
 }

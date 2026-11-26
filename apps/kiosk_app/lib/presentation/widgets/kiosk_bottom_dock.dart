@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import '../theme/kiosk_theme.dart';
 import '../viewmodels/kiosk_viewmodel.dart';
 
-/// Clean light bottom dock for 2FA credential submission plus progressive-disclosure QA triggers.
+/// Bottom input dock for 2FA credential submission plus progressive-disclosure QA triggers.
 class KioskBottomDock extends StatefulWidget {
   final TextEditingController controller;
   final KioskViewModel kioskVm;
@@ -35,177 +35,174 @@ class _KioskBottomDockState extends State<KioskBottomDock> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
-        color: KioskTheme.surface,
-        border: Border(top: BorderSide(color: KioskTheme.border)),
+        color: KioskTheme.industrialSurface,
+        border: Border(top: BorderSide(color: KioskTheme.industrialBorder)),
       ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1120),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isNarrow = constraints.maxWidth < 540;
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Primary 2FA credential input row
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 520;
 
-                    final inputField = SizedBox(
-                      height: 46,
-                      child: TextField(
-                        controller: widget.controller,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontFamily: 'monospace',
-                          fontFamilyFallback: KioskTheme.monoFallback,
-                          color: KioskTheme.textPrimary,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Pegue trama NFC/QR o ingrese RUT...',
-                          prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 19),
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.content_paste_rounded, size: 18),
-                            tooltip: 'Pegar desde portapapeles y procesar',
-                            onPressed: _pasteAndSubmit,
-                          ),
-                        ),
-                        onChanged: (val) {
-                          final trimmed = val.trim();
-                          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-                              (trimmed.length >= 11 &&
-                                  trimmed.contains('-') &&
-                                  RegExp(r'^\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]$')
-                                      .hasMatch(trimmed))) {
-                            widget.onSubmitPayload(trimmed);
-                          }
-                        },
-                        onSubmitted: widget.onSubmitPayload,
-                      ),
-                    );
-
-                    final processButton = ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: KioskTheme.signalGranted,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(165, 46),
-                      ),
-                      icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
-                      onPressed: () => widget.onSubmitPayload(widget.controller.text),
-                      label: const Text(
-                        'PROCESAR 2FA',
-                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
-                      ),
-                    );
-
-                    if (isNarrow) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          inputField,
-                          const SizedBox(height: 10),
-                          processButton,
-                        ],
-                      );
+              final inputField = SizedBox(
+                height: 44,
+                child: TextField(
+                  controller: widget.controller,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                    fontFamilyFallback: KioskTheme.monoFallback,
+                    color: KioskTheme.textWhite,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Pegue trama NFC/QR o ingrese RUT...',
+                    prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.content_paste_rounded, size: 17),
+                      tooltip: 'Pegar desde portapapeles y procesar',
+                      onPressed: _pasteAndSubmit,
+                    ),
+                  ),
+                  onChanged: (val) {
+                    final trimmed = val.trim();
+                    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+                        (trimmed.length >= 11 &&
+                            trimmed.contains('-') &&
+                            RegExp(r'^\d{1,2}\.?\d{3}\.?\d{3}-[\dkK]$').hasMatch(trimmed))) {
+                      widget.onSubmitPayload(trimmed);
                     }
-
-                    return Row(
-                      children: [
-                        Expanded(child: inputField),
-                        const SizedBox(width: 12),
-                        processButton,
-                      ],
-                    );
                   },
+                  onSubmitted: widget.onSubmitPayload,
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              );
+
+              final processButton = ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: KioskTheme.signalGranted,
+                  foregroundColor: const Color(0xFF090A0D),
+                  minimumSize: const Size(140, 44),
+                ),
+                icon: const Icon(Icons.check_circle_outline_rounded, size: 17),
+                onPressed: () => widget.onSubmitPayload(widget.controller.text),
+                label: const Text(
+                  'PROCESAR 2FA',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                ),
+              );
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    InkWell(
-                      onTap: () => setState(() => _showDemoTools = !_showDemoTools),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _showDemoTools
-                                  ? Icons.keyboard_arrow_down_rounded
-                                  : Icons.keyboard_arrow_right_rounded,
-                              size: 18,
-                              color: KioskTheme.textSecondary,
-                            ),
-                            const SizedBox(width: 4),
-                            const Text(
-                              'Herramientas de Simulación / QA (4)',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: KioskTheme.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: widget.kioskVm.resetToIdle,
-                      icon: const Icon(Icons.restart_alt_rounded, size: 16),
-                      label: const Text('Reset IDLE', style: TextStyle(fontSize: 11.5)),
-                      style: TextButton.styleFrom(
-                        foregroundColor: KioskTheme.textSecondary,
-                        minimumSize: const Size(40, 34),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      ),
-                    ),
+                    inputField,
+                    const SizedBox(height: 8),
+                    processButton,
                   ],
-                ),
-                if (_showDemoTools) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: inputField),
+                  const SizedBox(width: 10),
+                  processButton,
+                ],
+              );
+            },
+          ),
+
+          const SizedBox(height: 8),
+
+          // Progressive disclosure header for Demo / QA Simulation triggers
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              InkWell(
+                onTap: () => setState(() => _showDemoTools = !_showDemoTools),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      _buildQaChip(
-                        icon: Icons.block_rounded,
-                        iconColor: KioskTheme.signalDeniedText,
-                        label: 'RUT No Registrado (Denegado)',
-                        textColor: KioskTheme.signalDeniedText,
-                        onPressed: () {
-                          widget.controller.text = '00.000.000-0';
-                          widget.onSubmitPayload('00.000.000-0');
-                        },
+                      Icon(
+                        _showDemoTools
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.keyboard_arrow_right_rounded,
+                        size: 18,
+                        color: KioskTheme.textGrey,
                       ),
-                      _buildQaChip(
-                        icon: Icons.face_retouching_off_rounded,
-                        iconColor: KioskTheme.signalDeniedText,
-                        label: 'Rostro Divergente (2FA)',
-                        textColor: KioskTheme.signalDeniedText,
-                        onPressed: () => widget.kioskVm.simulateDivergentFace(widget.controller.text),
-                      ),
-                      _buildQaChip(
-                        icon: Icons.timer_off_rounded,
-                        iconColor: KioskTheme.signalAmberText,
-                        label: 'Timeout 3.5s',
-                        textColor: KioskTheme.signalAmberText,
-                        onPressed: () => widget.kioskVm.simulateTimeout(widget.controller.text),
-                      ),
-                      _buildQaChip(
-                        icon: Icons.clear_rounded,
-                        iconColor: KioskTheme.textSecondary,
-                        label: 'Limpiar entrada',
-                        onPressed: () => widget.controller.clear(),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Herramientas de Simulación / QA (4)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: KioskTheme.textGrey,
+                        ),
                       ),
                     ],
                   ),
-                ],
+                ),
+              ),
+              TextButton.icon(
+                onPressed: widget.kioskVm.resetToIdle,
+                icon: const Icon(Icons.restart_alt_rounded, size: 15),
+                label: const Text('Reset IDLE', style: TextStyle(fontSize: 11)),
+                style: TextButton.styleFrom(
+                  foregroundColor: KioskTheme.textGrey,
+                  minimumSize: const Size(40, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                ),
+              ),
+            ],
+          ),
+
+          if (_showDemoTools) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _buildQaChip(
+                  icon: Icons.block_rounded,
+                  iconColor: KioskTheme.signalDenied,
+                  label: 'RUT No Registrado (Denegado)',
+                  textColor: KioskTheme.signalDenied,
+                  onPressed: () {
+                    widget.controller.text = '00.000.000-0';
+                    widget.onSubmitPayload('00.000.000-0');
+                  },
+                ),
+                _buildQaChip(
+                  icon: Icons.face_retouching_off_rounded,
+                  iconColor: KioskTheme.signalDenied,
+                  label: 'Rostro Divergente (2FA)',
+                  textColor: KioskTheme.signalDenied,
+                  onPressed: () => widget.kioskVm.simulateDivergentFace(widget.controller.text),
+                ),
+                _buildQaChip(
+                  icon: Icons.timer_off_rounded,
+                  iconColor: KioskTheme.signalAmber,
+                  label: 'Timeout 3.5s',
+                  textColor: KioskTheme.signalAmber,
+                  onPressed: () => widget.kioskVm.simulateTimeout(widget.controller.text),
+                ),
+                _buildQaChip(
+                  icon: Icons.clear_rounded,
+                  iconColor: KioskTheme.textGrey,
+                  label: 'Limpiar entrada',
+                  onPressed: () => widget.controller.clear(),
+                ),
               ],
             ),
-          ),
-        ),
+          ],
+        ],
       ),
     );
   }
@@ -214,16 +211,16 @@ class _KioskBottomDockState extends State<KioskBottomDock> {
     required IconData icon,
     required Color iconColor,
     required String label,
-    Color textColor = KioskTheme.textPrimary,
+    Color textColor = KioskTheme.textWhite,
     required VoidCallback onPressed,
   }) {
     return ActionChip(
-      backgroundColor: KioskTheme.surfaceSubtle,
-      side: const BorderSide(color: KioskTheme.borderStrong),
-      avatar: Icon(icon, size: 15, color: iconColor),
+      backgroundColor: KioskTheme.industrialCard,
+      side: const BorderSide(color: KioskTheme.industrialBorderStrong),
+      avatar: Icon(icon, size: 14, color: iconColor),
       label: Text(
         label,
-        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: textColor),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textColor),
       ),
       onPressed: onPressed,
     );

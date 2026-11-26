@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/kiosk_theme.dart';
 import '../viewmodels/kiosk_viewmodel.dart';
 
-/// Crisp high-contrast feedback banner for 2FA and Anti-Spoofing events.
+/// Restrained diagnostic feedback banner for 2FA verification steps.
 class KioskDiagnosticToast extends StatelessWidget {
   final KioskToast toast;
   final VoidCallback? onDismiss;
@@ -16,55 +16,33 @@ class KioskDiagnosticToast extends StatelessWidget {
   static const Map<int, Color> _signalMap = {
     0xFF00F0FF: KioskTheme.signalScanning,
     0xFF00B4D8: KioskTheme.signalScanning,
-    0xFF10B981: KioskTheme.signalGranted,
+    0xFF10B981: KioskTheme.signalGrantedText,
     0xFFEF4444: KioskTheme.signalDenied,
   };
-
-  Color _softBgFor(Color accent) {
-    if (accent == KioskTheme.signalGranted) return KioskTheme.signalGrantedBg;
-    if (accent == KioskTheme.signalDenied) return KioskTheme.signalDeniedBg;
-    return KioskTheme.signalScanningBg;
-  }
-
-  Color _textColorFor(Color accent) {
-    if (accent == KioskTheme.signalGranted) return KioskTheme.signalGrantedText;
-    if (accent == KioskTheme.signalDenied) return KioskTheme.signalDeniedText;
-    return KioskTheme.signalScanningDark;
-  }
 
   @override
   Widget build(BuildContext context) {
     final accent = _signalMap[toast.color.toARGB32()] ?? toast.color;
-    final titleColor = _textColorFor(accent);
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       decoration: BoxDecoration(
-        color: KioskTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accent.withValues(alpha: 0.35), width: 1),
-        boxShadow: KioskTheme.cardShadow,
+        color: KioskTheme.industrialSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: KioskTheme.industrialBorderStrong, width: 1),
       ),
       clipBehavior: Clip.antiAlias,
       child: IntrinsicHeight(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(width: 5, color: accent),
+            Container(width: 4, color: accent),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Row(
                   children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: _softBgFor(accent),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(toast.icon, color: titleColor, size: 19),
-                    ),
+                    Icon(toast.icon, color: accent, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -74,18 +52,18 @@ class KioskDiagnosticToast extends StatelessWidget {
                           Text(
                             toast.title,
                             style: TextStyle(
-                              color: titleColor,
+                              color: accent,
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
+                              letterSpacing: 0.7,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             toast.message,
                             style: const TextStyle(
-                              color: KioskTheme.textPrimary,
-                              fontSize: 12.5,
+                              color: KioskTheme.textWhite,
+                              fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -95,9 +73,9 @@ class KioskDiagnosticToast extends StatelessWidget {
                     if (onDismiss != null)
                       IconButton(
                         tooltip: 'Cerrar aviso',
-                        icon: const Icon(Icons.close_rounded, size: 17, color: KioskTheme.textMuted),
+                        icon: const Icon(Icons.close_rounded, size: 16, color: KioskTheme.textGrey),
                         onPressed: onDismiss,
-                        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                         padding: EdgeInsets.zero,
                       ),
                   ],

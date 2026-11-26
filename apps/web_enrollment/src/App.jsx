@@ -387,28 +387,28 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-canvas text-ink font-sans selection:bg-crimson selection:text-white overflow-x-clip">
+    <div className="min-h-screen bg-canvas text-ink font-sans selection:bg-crimson selection:text-white">
       <TopHeader backendStatus={backendStatus} />
 
       <FeedbackBanner feedback={actionFeedback} onDismiss={() => setActionFeedback(null)} />
 
-      <main className="max-w-7xl mx-auto px-3.5 sm:px-6 py-5 sm:py-8 space-y-6 sm:space-y-10">
-        <div className="border-b border-hairline pb-4 sm:pb-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h2 className="text-xl sm:text-3xl font-bold text-ink tracking-tight">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-10">
+        <div className="border-b border-hairline pb-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-2xl sm:text-3xl font-bold text-ink tracking-tight">
               Enrolamiento Biométrico Centralizado
             </h2>
-            <span className="font-mono text-[11px] sm:text-xs text-ink-secondary uppercase tracking-wider">
+            <span className="font-mono text-xs text-ink-secondary uppercase tracking-wider">
               Modelo 512D · Privacidad Zero-Trust
             </span>
           </div>
-          <p className="text-ink-secondary text-xs sm:text-sm mt-1.5 max-w-3xl leading-relaxed">
+          <p className="text-ink-secondary text-sm mt-1.5 max-w-3xl leading-relaxed">
             Capture el rostro en tiempo real para generar un descriptor matemático normalizado de 512 dimensiones.{' '}
             <strong className="font-semibold text-ink">No se almacenan fotografías crudas</strong> en ningún repositorio.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 lg:gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
           <BiometricCameraPanel
             videoRef={videoRef}
             isCameraActive={isCameraActive}

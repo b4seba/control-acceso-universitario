@@ -2,42 +2,35 @@ import 'package:flutter/material.dart';
 import '../theme/kiosk_theme.dart';
 import '../viewmodels/kiosk_viewmodel.dart';
 
-/// Light high-contrast biometric telemetry & Anti-Spoofing sensor status card.
+/// Real-time 1:1 facial telemetry and camera control panel paired with LiveCameraWidget.
 class KioskTelemetryPanel extends StatelessWidget {
   final KioskViewModel kioskVm;
-  final double? height;
+  final double height;
 
   const KioskTelemetryPanel({
     super.key,
     required this.kioskVm,
-    this.height,
+    this.height = 240,
   });
 
   @override
   Widget build(BuildContext context) {
     final bool hasFace = kioskVm.liveFaceDetected;
-    final bool isRealFace = kioskVm.liveIsRealFace;
-    final bool isSpoof = hasFace && !isRealFace;
     final activeStudent = kioskVm.active2FAStudent;
     final double? sim = kioskVm.active2FASimilarity;
-    final bool isMatch = isRealFace && sim != null && sim >= 0.65;
+    final bool isMatch = sim != null && sim >= 0.65;
 
-    final Color borderColor = isSpoof
-        ? KioskTheme.signalDenied.withValues(alpha: 0.7)
-        : isMatch
-            ? KioskTheme.signalGranted.withValues(alpha: 0.65)
-            : (hasFace
-                ? KioskTheme.signalScanning.withValues(alpha: 0.5)
-                : KioskTheme.border);
+    final Color borderColor = isMatch
+        ? KioskTheme.signalGranted
+        : (hasFace ? KioskTheme.signalScanning.withValues(alpha: 0.7) : KioskTheme.industrialBorderStrong);
 
     return Container(
       height: height,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: KioskTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderColor, width: 1.2),
-        boxShadow: KioskTheme.cardShadow,
+        color: KioskTheme.industrialSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -47,19 +40,20 @@ class KioskTelemetryPanel extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
-                  color: KioskTheme.brandCrimsonSoft,
-                  borderRadius: BorderRadius.circular(9),
+                  color: KioskTheme.industrialCard,
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: KioskTheme.industrialBorderStrong),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.fingerprint_rounded,
-                  size: 19,
-                  color: KioskTheme.brandCrimson,
+                  size: 16,
+                  color: hasFace ? KioskTheme.signalScanning : KioskTheme.textGrey,
                 ),
               ),
-              const SizedBox(width: 11),
+              const SizedBox(width: 10),
               const Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -68,82 +62,63 @@ class KioskTelemetryPanel extends StatelessWidget {
                       'TELEMETRÍA BIOMÉTRICA 512D',
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.4,
-                        color: KioskTheme.textPrimary,
+                        letterSpacing: 0.6,
+                        color: KioskTheme.textWhite,
                       ),
                     ),
                     Text(
-                      'YuNet + MobileFaceNet + Anti-Spoofing',
+                      'MobileFaceNet Edge · 127.0.0.1:5050',
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         fontFamily: 'monospace',
                         fontFamilyFallback: KioskTheme.monoFallback,
-                        color: KioskTheme.textSecondary,
+                        color: KioskTheme.textMuted,
                       ),
                     ),
                   ],
                 ),
               ),
               Container(
-                width: 10,
-                height: 10,
+                width: 8,
+                height: 8,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isSpoof
-                      ? KioskTheme.signalDenied
-                      : (hasFace ? KioskTheme.signalGranted : KioskTheme.borderStrong),
+                  color: hasFace ? KioskTheme.signalGranted : KioskTheme.textMuted,
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 12),
-
-          // 2. Face Detection & Anti-Spoofing Status Pill
+          // 2. Face Detection Status
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: isSpoof
-                  ? KioskTheme.signalDeniedBg
-                  : (hasFace ? KioskTheme.signalGrantedBg : KioskTheme.surfaceSubtle),
-              borderRadius: BorderRadius.circular(10),
+              color: KioskTheme.industrialCard,
+              borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isSpoof
-                    ? KioskTheme.signalDenied.withValues(alpha: 0.4)
-                    : (hasFace
-                        ? KioskTheme.signalGranted.withValues(alpha: 0.35)
-                        : KioskTheme.border),
+                color: hasFace
+                    ? KioskTheme.signalScanning.withValues(alpha: 0.45)
+                    : KioskTheme.industrialBorder,
               ),
             ),
             child: Row(
               children: [
                 Icon(
-                  isSpoof
-                      ? Icons.gpp_bad_rounded
-                      : (hasFace ? Icons.verified_user_rounded : Icons.face_rounded),
-                  size: 18,
-                  color: isSpoof
-                      ? KioskTheme.signalDeniedText
-                      : (hasFace ? KioskTheme.signalGrantedText : KioskTheme.textMuted),
+                  hasFace ? Icons.face_unlock_rounded : Icons.face_rounded,
+                  size: 16,
+                  color: hasFace ? KioskTheme.signalScanning : KioskTheme.textMuted,
                 ),
-                const SizedBox(width: 9),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    isSpoof
-                        ? 'ANTI-SPOOFING: FOTO / PANTALLA DETECTADA'
-                        : (hasFace
-                            ? 'ROSTRO VIVO VERIFICADO (${(kioskVm.liveLivenessScore * 100).toStringAsFixed(0)}%)'
-                            : 'BUSCANDO ROSTRO EN ENCUADRE...'),
-                    overflow: TextOverflow.ellipsis,
+                    hasFace ? 'ROSTRO EN ENCUADRE' : 'BUSCANDO ROSTRO...',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: isSpoof
-                          ? KioskTheme.signalDeniedText
-                          : (hasFace ? KioskTheme.signalGrantedText : KioskTheme.textSecondary),
+                      color: hasFace ? KioskTheme.signalScanning : KioskTheme.textGrey,
                     ),
                   ),
                 ),
@@ -151,23 +126,42 @@ class KioskTelemetryPanel extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 12),
-
-          // 3. Active 2FA Status or Instruction
+          // 3. Active 2FA 1:1 Verification Indicator
           if (activeStudent != null)
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: isMatch ? KioskTheme.signalGrantedBg : KioskTheme.signalScanningBg,
-                borderRadius: BorderRadius.circular(10),
+                color: isMatch ? KioskTheme.signalGrantedBg : KioskTheme.industrialCard,
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: (isMatch ? KioskTheme.signalGranted : KioskTheme.signalScanning)
-                      .withValues(alpha: 0.35),
+                  color: isMatch
+                      ? KioskTheme.signalGranted.withValues(alpha: 0.5)
+                      : KioskTheme.signalScanning.withValues(alpha: 0.45),
                 ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Row(
+                    children: [
+                      Icon(
+                        isMatch ? Icons.verified_user_rounded : Icons.security_rounded,
+                        size: 14,
+                        color: isMatch ? KioskTheme.signalGrantedText : KioskTheme.signalScanning,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'VALIDACIÓN 2FA (1:1)',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                          color: isMatch ? KioskTheme.signalGrantedText : KioskTheme.signalScanning,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     activeStudent.fullName,
                     maxLines: 1,
@@ -175,21 +169,18 @@ class KioskTelemetryPanel extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: KioskTheme.textPrimary,
+                      color: KioskTheme.textWhite,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     sim != null
-                        ? 'Similitud 1:1: ${(sim * 100).toStringAsFixed(1)}% (Umbral 65%)'
-                        : 'Contrastando rostro contra vector 512D...',
+                        ? 'Similitud: ${(sim * 100).toStringAsFixed(1)}% (Umbral 65%)'
+                        : 'Contrastando rostro contra credencial...',
                     style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
                       fontFeatures: const [FontFeature.tabularFigures()],
-                      color: isMatch
-                          ? KioskTheme.signalGrantedText
-                          : KioskTheme.signalScanningDark,
+                      color: isMatch ? KioskTheme.signalGrantedText : KioskTheme.textGrey,
                     ),
                   ),
                 ],
@@ -197,31 +188,29 @@ class KioskTelemetryPanel extends StatelessWidget {
             )
           else
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               decoration: BoxDecoration(
-                color: KioskTheme.surfaceSubtle,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: KioskTheme.border),
+                color: KioskTheme.industrialBlack.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: KioskTheme.industrialBorder),
               ),
               child: Row(
                 children: [
                   Icon(
                     hasFace ? Icons.qr_code_scanner_rounded : Icons.info_outline_rounded,
-                    size: 16,
-                    color: hasFace ? KioskTheme.signalScanningDark : KioskTheme.textMuted,
+                    size: 15,
+                    color: hasFace ? KioskTheme.signalScanning : KioskTheme.textMuted,
                   ),
-                  const SizedBox(width: 9),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      isSpoof
-                          ? 'Retire el teléfono o imagen y mire directamente a la cámara.'
-                          : hasFace
-                              ? 'Rostro listo. Presente su QR dinámico o RUT abajo.'
-                              : 'Ubique su rostro frente al visor y presente su credencial.',
+                      hasFace
+                          ? 'Rostro detectado. Presente credencial QR/NFC o RUT.'
+                          : 'Sitúese frente al sensor e ingrese su credencial.',
                       style: const TextStyle(
-                        fontSize: 12,
-                        color: KioskTheme.textSecondary,
-                        height: 1.35,
+                        fontSize: 11,
+                        color: KioskTheme.textGrey,
+                        height: 1.3,
                       ),
                     ),
                   ),
@@ -229,24 +218,22 @@ class KioskTelemetryPanel extends StatelessWidget {
               ),
             ),
 
-          const SizedBox(height: 12),
-
           // 4. Camera Release Toggle
           OutlinedButton.icon(
             onPressed: kioskVm.toggleLiveCamera,
-            icon: const Icon(Icons.videocam_off_rounded, size: 16, color: KioskTheme.signalDeniedText),
+            icon: const Icon(Icons.videocam_off_rounded, size: 15, color: KioskTheme.signalDenied),
             label: const Text(
               'DESACTIVAR CÁMARA',
               style: TextStyle(
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: KioskTheme.signalDeniedText,
+                color: KioskTheme.signalDenied,
               ),
             ),
             style: OutlinedButton.styleFrom(
               backgroundColor: KioskTheme.signalDeniedBg,
-              side: BorderSide(color: KioskTheme.signalDenied.withValues(alpha: 0.3)),
-              minimumSize: const Size.fromHeight(42),
+              side: BorderSide(color: KioskTheme.signalDenied.withValues(alpha: 0.35)),
+              minimumSize: const Size.fromHeight(38),
             ),
           ),
         ],

@@ -1,49 +1,32 @@
 import 'package:flutter/material.dart';
 
 class KioskTheme {
-  // Light architectural transit-gate palette (high daylight contrast, zero dark neon)
-  static const Color canvas = Color(0xFFF3F4F7);
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceSubtle = Color(0xFFF8FAFC);
-  static const Color surfaceMuted = Color(0xFFECEFF4);
-  static const Color border = Color(0xFFE2E6EE);
-  static const Color borderStrong = Color(0xFFCBD2DF);
+  // Matte anti-glare industrial palette for 7" & desktop edge turnstile terminals
+  static const Color industrialBlack = Color(0xFF0F1115);
+  static const Color industrialSurface = Color(0xFF171A21);
+  static const Color industrialCard = Color(0xFF1E222B);
+  static const Color industrialBorder = Color(0xFF262B36);
+  static const Color industrialBorderStrong = Color(0xFF343B4A);
 
-  // Institutional & high-contrast semantic colors (WCAG AA/AAA)
+  // Institutional accent & restrained hardware state signals (WCAG AA verified)
   static const Color brandCrimson = Color(0xFF9E1B32);
-  static const Color brandCrimsonDark = Color(0xFF7A1426);
-  static const Color brandCrimsonSoft = Color(0xFFFDF2F4);
+  static const Color crimsonText = Color(0xFFF07185);
 
-  static const Color signalIdle = Color(0xFF0284C7);
-  static const Color signalIdleBg = Color(0xFFE0F2FE);
+  static const Color signalIdle = Color(0xFF3B82F6);
+  static const Color signalScanning = Color(0xFF38BDF8);
+  static const Color signalAmber = Color(0xFFFBBF24);
+  static const Color signalAmberBg = Color(0xFF261E0D);
 
-  static const Color signalScanning = Color(0xFF0284C7);
-  static const Color signalScanningDark = Color(0xFF0369A1);
-  static const Color signalScanningBg = Color(0xFFE0F2FE);
+  static const Color signalGranted = Color(0xFF22C55E);
+  static const Color signalGrantedText = Color(0xFF4ADE80);
+  static const Color signalGrantedBg = Color(0xFF0E2219);
 
-  static const Color signalAmber = Color(0xFFD97706);
-  static const Color signalAmberText = Color(0xFFB45309);
-  static const Color signalAmberBg = Color(0xFFFEF3C7);
+  static const Color signalDenied = Color(0xFFF87171);
+  static const Color signalDeniedBg = Color(0xFF231215);
 
-  static const Color signalGranted = Color(0xFF16A34A);
-  static const Color signalGrantedText = Color(0xFF15803D);
-  static const Color signalGrantedBg = Color(0xFFDCFCE7);
-
-  static const Color signalDenied = Color(0xFFDC2626);
-  static const Color signalDeniedText = Color(0xFFB91C1C);
-  static const Color signalDeniedBg = Color(0xFFFEE2E2);
-
-  static const Color textPrimary = Color(0xFF111827);
-  static const Color textSecondary = Color(0xFF4B5563);
-  static const Color textMuted = Color(0xFF6B7280);
-
-  static const List<BoxShadow> cardShadow = [
-    BoxShadow(
-      color: Color(0x0D0F172A),
-      blurRadius: 16,
-      offset: Offset(0, 4),
-    ),
-  ];
+  static const Color textWhite = Color(0xFFF4F4F5);
+  static const Color textGrey = Color(0xFFA1A1AA);
+  static const Color textMuted = Color(0xFF8E95A2);
 
   static const List<String> sansFallback = [
     'IBM Plex Sans',
@@ -62,31 +45,31 @@ class KioskTheme {
   static ThemeData get industrialTheme {
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.light,
-      scaffoldBackgroundColor: canvas,
-      colorScheme: const ColorScheme.light(
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: industrialBlack,
+      colorScheme: const ColorScheme.dark(
         primary: brandCrimson,
         secondary: signalScanning,
-        surface: surface,
+        surface: industrialSurface,
         error: signalDenied,
         onPrimary: Colors.white,
-        onSurface: textPrimary,
+        onSurface: textWhite,
       ),
       fontFamilyFallback: sansFallback,
       appBarTheme: const AppBarTheme(
-        backgroundColor: surface,
-        foregroundColor: textPrimary,
+        backgroundColor: industrialSurface,
+        foregroundColor: textWhite,
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
       ),
       cardTheme: CardThemeData(
-        color: surface,
+        color: industrialSurface,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: border, width: 1),
+          side: const BorderSide(color: industrialBorder, width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -94,23 +77,22 @@ class KioskTheme {
           backgroundColor: brandCrimson,
           foregroundColor: Colors.white,
           elevation: 0,
-          minimumSize: const Size(44, 46),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           textStyle: const TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
-            letterSpacing: 0.3,
+            letterSpacing: 0.4,
             fontFamilyFallback: sansFallback,
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: textPrimary,
-          backgroundColor: surface,
-          minimumSize: const Size(42, 42),
-          side: const BorderSide(color: borderStrong, width: 1),
+          foregroundColor: textWhite,
+          minimumSize: const Size(40, 40),
+          side: const BorderSide(color: industrialBorderStrong, width: 1),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           textStyle: const TextStyle(
@@ -122,22 +104,22 @@ class KioskTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: surfaceSubtle,
-        labelStyle: const TextStyle(color: textSecondary, fontSize: 13, fontWeight: FontWeight.w500),
+        fillColor: industrialCard,
+        labelStyle: const TextStyle(color: textGrey, fontSize: 13),
         hintStyle: const TextStyle(color: textMuted, fontSize: 13),
-        prefixIconColor: textSecondary,
+        prefixIconColor: textGrey,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: borderStrong),
+          borderSide: const BorderSide(color: industrialBorderStrong),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: borderStrong),
+          borderSide: const BorderSide(color: industrialBorderStrong),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: brandCrimson, width: 1.5),
+          borderSide: const BorderSide(color: signalScanning, width: 1.5),
         ),
       ),
     );
