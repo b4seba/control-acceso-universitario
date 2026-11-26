@@ -41,7 +41,9 @@ ARQUITECTURA_EV2.md
 
 # Modelos de IA pesados (>100MB)
 *.onnx
+*.onnx.gz
 **/models/*.onnx
+**/models/*.onnx.gz
 !**/face_detection_yunet_2023mar.onnx
 
 # Archivos temporales de SQLite WAL

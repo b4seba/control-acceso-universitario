@@ -1,5 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { extract512DVectorFromVideo, initMobileFaceNet } from './utils/vectorExtractor';
+import {
+  extract512DVectorFromVideo,
+  getModelStatus,
+  initMobileFaceNet,
+  subscribeModelStatus,
+} from './utils/vectorExtractor';
 import TopHeader from './components/TopHeader';
 import FeedbackBanner from './components/FeedbackBanner';
 import BiometricCameraPanel from './components/BiometricCameraPanel';
@@ -54,6 +59,7 @@ export default function App() {
   const [isReconciling, setIsReconciling] = useState(false);
   const [reconcileReport, setReconcileReport] = useState(null);
   const [showReconcileModal, setShowReconcileModal] = useState(false);
+  const [modelStatus, setModelStatus] = useState(() => getModelStatus());
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -140,24 +146,37 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
+    const unsubscribe = subscribeModelStatus((status) => {
+      if (!cancelled) setModelStatus(status);
+    });
+
     const bootstrap = async () => {
       await Promise.resolve();
       if (cancelled) return;
       checkBackendHealth();
       startCamera();
       fetchStudents();
-      initMobileFaceNet();
+      initMobileFaceNet().catch(() => {
+        // El estado de error ya se refleja en modelStatus para reintento en pantalla
+      });
     };
     bootstrap();
 
     return () => {
       cancelled = true;
+      unsubscribe();
       stopCamera();
       if (feedbackTimerRef.current) {
         window.clearTimeout(feedbackTimerRef.current);
       }
     };
   }, [checkBackendHealth, startCamera, stopCamera, fetchStudents]);
+
+  const handleRetryModelLoad = useCallback(() => {
+    initMobileFaceNet().catch(() => {
+      // Estado actualizado vía subscribeModelStatus
+    });
+  }, []);
 
   const handleFieldChange = useCallback((field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -176,7 +195,12 @@ export default function App() {
       pushFeedback('success', 'Vector biométrico 512D extraído exitosamente mediante MobileFaceNet.', 4500);
     } catch (err) {
       console.error('Error extrayendo vector con MobileFaceNet:', err);
-      pushFeedback('error', 'No se detectó un rostro válido o falló la extracción del vector 512D.', 5000);
+      const reason = err?.message ? ` (${err.message})` : '';
+      pushFeedback(
+        'error',
+        `No se detectó un rostro válido o falló la extracción del vector 512D${reason}.`,
+        6000
+      );
     } finally {
       setIsExtracting(false);
     }
@@ -415,9 +439,11 @@ export default function App() {
             cameraError={cameraError}
             isExtracting={isExtracting}
             vector512={vector512}
+            modelStatus={modelStatus}
             onStartCamera={startCamera}
             onStopCamera={stopCamera}
             onCaptureFace={handleCaptureFace}
+            onRetryModelLoad={handleRetryModelLoad}
           />
 
           <EnrollmentForm

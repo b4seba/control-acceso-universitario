@@ -4,16 +4,212 @@ import * as ort from 'onnxruntime-web';
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/';
 ort.env.wasm.numThreads = 1;
 
+const MODEL_CANDIDATES = [
+  { url: '/models/mobilefacenet.int8.onnx', approxRawBytes: 65910000, label: 'MobileFaceNet INT8' },
+  { url: '/models/mobilefacenet.onnx', approxRawBytes: 261036388, label: 'MobileFaceNet FP32' },
+];
+const YUNET_URL = '/models/face_detection_yunet_2023mar.onnx';
+
+const IDB_NAME = 'sirad-biometric-models-v1';
+const IDB_STORE = 'models';
+
 let mobileNetSession = null;
 let yunetSession = null;
-let isInitializing = false;
+let initPromise = null;
+
+let modelStatus = {
+  state: 'idle', // 'idle' | 'loading' | 'ready' | 'error'
+  stage: '',
+  progressPct: 0,
+  loadedMB: 0,
+  totalMB: 0,
+  cached: false,
+  errorMessage: null,
+};
+
+const listeners = new Set();
+
+function emitStatus(patch) {
+  modelStatus = { ...modelStatus, ...patch };
+  for (const fn of listeners) {
+    try {
+      fn(modelStatus);
+    } catch {
+      // Ignore UI subscriber errors
+    }
+  }
+}
+
+export function getModelStatus() {
+  return modelStatus;
+}
+
+export function subscribeModelStatus(listener) {
+  listeners.add(listener);
+  listener(modelStatus);
+  return () => listeners.delete(listener);
+}
+
+function openModelDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB no disponible'));
+      return;
+    }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE, { keyPath: 'url' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('Error abriendo IndexedDB'));
+  });
+}
+
+async function readCachedModel(url) {
+  try {
+    const db = await openModelDb();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const store = tx.objectStore(IDB_STORE);
+      const req = store.get(url);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+      tx.oncomplete = () => db.close();
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedModel(url, buffer, validator) {
+  try {
+    const db = await openModelDb();
+    await new Promise((resolve) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      store.put({ url, buffer, validator, cachedAt: Date.now() });
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    });
+  } catch {
+    // Non-fatal: private browsing / quota limits still run in memory
+  }
+}
+
+async function headModelValidator(url) {
+  try {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    window.clearTimeout(timer);
+    if (!res.ok) return { exists: false, validator: null };
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('text/html')) return { exists: false, validator: null };
+    const etag = res.headers.get('etag') || '';
+    const len = res.headers.get('content-length') || '';
+    return { exists: true, validator: `${etag}|${len}` };
+  } catch {
+    return { exists: null, validator: null };
+  }
+}
+
+async function fetchModelBytesWithProgress(url, approxRawBytes) {
+  const cached = await readCachedModel(url);
+  const head = await headModelValidator(url);
+
+  if (head.exists === false) {
+    return null;
+  }
+
+  if (cached?.buffer && (head.exists === null || !head.validator || cached.validator === head.validator)) {
+    const mb = Number((cached.buffer.byteLength / (1024 * 1024)).toFixed(1));
+    emitStatus({
+      stage: 'Cargando red facial desde caché local...',
+      progressPct: 92,
+      loadedMB: mb,
+      totalMB: mb,
+      cached: true,
+    });
+    return new Uint8Array(cached.buffer);
+  }
+
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  if (contentType.includes('text/html')) return null;
+
+  const isEncoded = Boolean(res.headers.get('content-encoding'));
+  const headerLen = Number(res.headers.get('content-length') || 0);
+  const expectedRaw = isEncoded ? approxRawBytes : headerLen || approxRawBytes;
+  const etag = res.headers.get('etag') || '';
+  const validator = `${etag}|${headerLen}`;
+
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    const buf = await res.arrayBuffer();
+    await writeCachedModel(url, buf, validator);
+    return new Uint8Array(buf);
+  }
+
+  const reader = res.body.getReader();
+  const chunks = [];
+  let receivedBytes = 0;
+  let lastEmitMs = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    receivedBytes += value.byteLength;
+
+    const now = performance.now();
+    if (now - lastEmitMs >= 150) {
+      lastEmitMs = now;
+      const pct = expectedRaw > 0 ? Math.min(90, Math.round((receivedBytes / expectedRaw) * 90)) : 50;
+      emitStatus({
+        stage: 'Descargando modelo biométrico...',
+        progressPct: pct,
+        loadedMB: Number((receivedBytes / (1024 * 1024)).toFixed(1)),
+        totalMB: Number((expectedRaw / (1024 * 1024)).toFixed(1)),
+        cached: false,
+      });
+    }
+  }
+
+  const merged = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  const totalMB = Number((receivedBytes / (1024 * 1024)).toFixed(1));
+  emitStatus({
+    stage: 'Compilando red neuronal en WebAssembly...',
+    progressPct: 95,
+    loadedMB: totalMB,
+    totalMB,
+    cached: false,
+  });
+
+  await writeCachedModel(url, merged.buffer, validator);
+  return merged;
+}
 
 const STRIDES = [8, 16, 32];
 
 // Decodificador nativo de YuNet Face Detector
 function decodeYuNet(results, scoreThresh = 0.45) {
   const faces = [];
-  
+
   for (let i = 0; i < STRIDES.length; i++) {
     const stride = STRIDES[i];
     const cols = Math.floor(640 / stride);
@@ -54,12 +250,12 @@ function decodeYuNet(results, scoreThresh = 0.45) {
           box: { x: x1, y: y1, width: w, height: h },
           score,
           landmarks: {
-            rightEye: landmarks[0], // Ojo derecho del sujeto (izquierda de la pantalla)
-            leftEye: landmarks[1],  // Ojo izquierdo del sujeto (derecha de la pantalla)
+            rightEye: landmarks[0],
+            leftEye: landmarks[1],
             nose: landmarks[2],
             rightMouth: landmarks[3],
             leftMouth: landmarks[4],
-          }
+          },
         });
       }
     }
@@ -69,37 +265,107 @@ function decodeYuNet(results, scoreThresh = 0.45) {
   return faces;
 }
 
-// Inicialización de modelos (MobileFaceNet + YuNet Face Detector)
+// Inicialización de modelos (YuNet Face Detector + MobileFaceNet con caché IndexedDB y singleton Promise)
 export async function initMobileFaceNet() {
-  if (mobileNetSession && yunetSession) return { mobileNetSession, yunetSession };
-  if (isInitializing) return;
-  isInitializing = true;
-
-  const startTime = performance.now();
-  console.log('[FacePipeline] Cargando MobileFaceNet y YuNet ONNX en WebAssembly...');
-
-  try {
-    if (!mobileNetSession) {
-      mobileNetSession = await ort.InferenceSession.create('/models/mobilefacenet.onnx', {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-      });
-    }
-    if (!yunetSession) {
-      yunetSession = await ort.InferenceSession.create('/models/face_detection_yunet_2023mar.onnx', {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-      });
-    }
-    const elapsedMs = (performance.now() - startTime).toFixed(1);
-    console.log(`[FacePipeline] Modelos cargados exitosamente en ${elapsedMs} ms`);
-  } catch (error) {
-    const elapsedMs = (performance.now() - startTime).toFixed(1);
-    console.error(`[FacePipeline] Error inicializando modelos ONNX tras ${elapsedMs} ms:`, error);
-  } finally {
-    isInitializing = false;
+  if (mobileNetSession && yunetSession) {
+    emitStatus({ state: 'ready', stage: 'Motor biométrico 512D listo', progressPct: 100, errorMessage: null });
+    return { mobileNetSession, yunetSession };
   }
-  return { mobileNetSession, yunetSession };
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    const startTime = performance.now();
+    emitStatus({
+      state: 'loading',
+      stage: 'Inicializando WebAssembly y detector YuNet...',
+      progressPct: 3,
+      loadedMB: 0,
+      totalMB: 0,
+      cached: false,
+      errorMessage: null,
+    });
+    console.log('[FacePipeline] Cargando YuNet y MobileFaceNet ONNX en WebAssembly...');
+
+    try {
+      // Descargar pesos en paralelo mientras WebAssembly + YuNet se inicializan
+      const fetchCandidateBytes = async () => {
+        if (mobileNetSession) return null;
+        for (const candidate of MODEL_CANDIDATES) {
+          try {
+            const bytes = await fetchModelBytesWithProgress(candidate.url, candidate.approxRawBytes);
+            if (bytes) return { candidate, bytes };
+          } catch (candidateErr) {
+            console.warn(`[FacePipeline] Error descargando ${candidate.url}:`, candidateErr);
+          }
+        }
+        return null;
+      };
+
+      const [, modelPayload] = await Promise.all([
+        yunetSession
+          ? Promise.resolve(yunetSession)
+          : ort.InferenceSession.create(YUNET_URL, {
+              executionProviders: ['wasm'],
+              graphOptimizationLevel: 'all',
+            }).then((sess) => {
+              yunetSession = sess;
+              return sess;
+            }),
+        fetchCandidateBytes(),
+      ]);
+
+      if (!mobileNetSession) {
+        if (!modelPayload) {
+          throw new Error('No se pudo descargar un modelo MobileFaceNet válido desde /models/.');
+        }
+        emitStatus({
+          stage: `Compilando ${modelPayload.candidate.label} en WebAssembly...`,
+          progressPct: 96,
+        });
+        try {
+          mobileNetSession = await ort.InferenceSession.create(modelPayload.bytes, {
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'all',
+          });
+          console.log(`[FacePipeline] Sesión creada con ${modelPayload.candidate.url}`);
+        } catch (primaryErr) {
+          console.warn(`[FacePipeline] Falló candidato ${modelPayload.candidate.url}:`, primaryErr);
+          const fallback = MODEL_CANDIDATES.find((c) => c.url !== modelPayload.candidate.url);
+          if (!fallback) throw primaryErr;
+          const fallbackBytes = await fetchModelBytesWithProgress(fallback.url, fallback.approxRawBytes);
+          if (!fallbackBytes) throw primaryErr;
+          mobileNetSession = await ort.InferenceSession.create(fallbackBytes, {
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'all',
+          });
+          console.log(`[FacePipeline] Sesión creada con fallback ${fallback.url}`);
+        }
+      }
+
+      const elapsedMs = (performance.now() - startTime).toFixed(1);
+      console.log(`[FacePipeline] Modelos cargados exitosamente en ${elapsedMs} ms`);
+      emitStatus({
+        state: 'ready',
+        stage: modelStatus.cached ? 'Motor 512D listo (caché local)' : 'Motor biométrico 512D listo',
+        progressPct: 100,
+        errorMessage: null,
+      });
+      return { mobileNetSession, yunetSession };
+    } catch (error) {
+      const elapsedMs = (performance.now() - startTime).toFixed(1);
+      const msg = error?.message || String(error);
+      console.error(`[FacePipeline] Error inicializando modelos ONNX tras ${elapsedMs} ms:`, error);
+      initPromise = null;
+      emitStatus({
+        state: 'error',
+        stage: 'Error al cargar el modelo ONNX',
+        errorMessage: msg,
+      });
+      throw error;
+    }
+  })();
+
+  return initPromise;
 }
 
 // Extraer vector 512D con Detección Facial YuNet + Alineamiento Canónico + Flip-Fusion
@@ -111,8 +377,12 @@ export async function extract512DVectorFromVideo(videoElement) {
     }
   }
 
-  const vWidth = videoElement.videoWidth || 640;
-  const vHeight = videoElement.videoHeight || 480;
+  if (!videoElement || videoElement.readyState < 2 || !videoElement.videoWidth || !videoElement.videoHeight) {
+    throw new Error('La señal de la cámara aún no está lista. Espere un momento y vuelva a capturar.');
+  }
+
+  const vWidth = videoElement.videoWidth;
+  const vHeight = videoElement.videoHeight;
 
   // 1. Detectar rostro con YuNet ONNX a 640x640
   let detectedFace = null;
@@ -152,7 +422,6 @@ export async function extract512DVectorFromVideo(videoElement) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
   if (detectedFace) {
-    // Mapear coordenadas de 640x640 a resolución nativa del video
     const scaleX = vWidth / 640;
     const scaleY = vHeight / 640;
     const reX = detectedFace.landmarks.rightEye.x * scaleX;
@@ -167,7 +436,6 @@ export async function extract512DVectorFromVideo(videoElement) {
     const currentDist = Math.hypot(dx, dy);
     const angle = Math.atan2(dy, dx);
 
-    // Parámetros canónicos estándar 112x112 ArcFace
     const targetDist = 35.24;
     const targetCenterX = 55.91;
     const targetCenterY = 51.60;
@@ -182,7 +450,6 @@ export async function extract512DVectorFromVideo(videoElement) {
     ctx.restore();
     console.log(`[FacePipeline] Rostro alineado canónicamente (Score: ${(detectedFace.score * 100).toFixed(1)}%)`);
   } else {
-    // Fallback al encuadre 4:5 central estandarizado
     const cropH = Math.min(vHeight * 0.72, vWidth * 0.9);
     const cropW = cropH * 0.8;
     const startX = (vWidth - cropW) / 2;
@@ -212,11 +479,9 @@ export async function extract512DVectorFromVideo(videoElement) {
 
   const inferStart = performance.now();
 
-  // Inferencia 1: Recorte alineado directo
   const imgDataDirect = ctx.getImageData(0, 0, 112, 112).data;
   const rawVecDirect = await runInference(imgDataDirect);
 
-  // Inferencia 2: Recorte alineado espejado (Flip-Fusion)
   const flipCanvas = document.createElement('canvas');
   flipCanvas.width = 112;
   flipCanvas.height = 112;
@@ -230,7 +495,6 @@ export async function extract512DVectorFromVideo(videoElement) {
   const inferMs = (performance.now() - inferStart).toFixed(1);
   console.log(`[FacePipeline] Inferencia 512D con Flip-Fusion completada en ${inferMs} ms`);
 
-  // Fusión vectorial y Normalización Euclidiana (L2 = 1.0)
   let sumSq = 0;
   const fusedVector = new Float32Array(512);
   for (let i = 0; i < 512; i++) {
@@ -238,14 +502,19 @@ export async function extract512DVectorFromVideo(videoElement) {
     fusedVector[i] = val;
     sumSq += val * val;
   }
-  const norm = Math.sqrt(sumSq) || 1.0;
+
+  ctx.clearRect(0, 0, 112, 112);
+  fCtx.clearRect(0, 0, 112, 112);
+
+  if (!sumSq || Number.isNaN(sumSq)) {
+    throw new Error('La inferencia produjo un vector biométrico nulo.');
+  }
+
+  const norm = Math.sqrt(sumSq);
   const normalizedVector = [];
   for (let i = 0; i < 512; i++) {
     normalizedVector.push(Number((fusedVector[i] / norm).toFixed(5)));
   }
 
-  // Zero-Trust: Destruir buffers de imagen de la memoria RAM
-  ctx.clearRect(0, 0, 112, 112);
-  fCtx.clearRect(0, 0, 112, 112);
   return normalizedVector;
 }

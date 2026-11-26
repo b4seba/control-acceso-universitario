@@ -1,9 +1,9 @@
 import React from 'react';
-import { Camera, CameraOff, CheckCircle2, Fingerprint, RefreshCw } from 'lucide-react';
+import { AlertCircle, Camera, CameraOff, CheckCircle2, Cpu, Fingerprint, RefreshCw } from 'lucide-react';
 
 /**
- * Optical biometric webcam capture panel with clean fiducial alignment guides
- * and L2 512D embedding preview.
+ * Optical biometric webcam capture panel with clean fiducial alignment guides,
+ * ONNX model readiness progress, and L2 512D embedding preview.
  */
 export default function BiometricCameraPanel({
   videoRef,
@@ -11,10 +11,15 @@ export default function BiometricCameraPanel({
   cameraError,
   isExtracting,
   vector512,
+  modelStatus,
   onStartCamera,
   onStopCamera,
   onCaptureFace,
+  onRetryModelLoad,
 }) {
+  const isModelLoading = modelStatus?.state === 'loading' || modelStatus?.state === 'idle';
+  const isModelError = modelStatus?.state === 'error';
+  const progressPct = modelStatus?.progressPct ?? 0;
   return (
     <section
       aria-labelledby="camera-panel-title"
@@ -146,6 +151,62 @@ export default function BiometricCameraPanel({
         )}
       </div>
 
+      {/* Model Readiness & Download Progress Strip */}
+      <div
+        className={`rounded-lg border px-3.5 py-2.5 text-xs flex flex-col gap-1.5 ${
+          isModelError
+            ? 'bg-danger-bg border-danger/25 text-danger'
+            : modelStatus?.state === 'ready'
+            ? 'bg-success-bg border-success/20 text-success'
+            : 'bg-subtle border-hairline text-ink-secondary'
+        }`}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            {isModelError ? (
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            ) : modelStatus?.state === 'ready' ? (
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            ) : (
+              <Cpu className="w-3.5 h-3.5 shrink-0 animate-pulse text-ink" aria-hidden="true" />
+            )}
+            <span>
+              {modelStatus?.stage || 'Inicializando motor biométrico ONNX...'}
+            </span>
+          </span>
+
+          {isModelLoading && (
+            <span className="font-mono text-[11px] tabular-nums text-ink">
+              {modelStatus?.totalMB > 0
+                ? `${progressPct}% · ${modelStatus.loadedMB}/${modelStatus.totalMB} MB`
+                : `${progressPct}%`}
+            </span>
+          )}
+
+          {isModelError && onRetryModelLoad && (
+            <button
+              type="button"
+              onClick={onRetryModelLoad}
+              className="px-2.5 py-1 rounded border border-danger/30 bg-surface hover:bg-danger-bg text-danger font-semibold text-[11px] inline-flex items-center gap-1 transition-colors duration-150"
+            >
+              <RefreshCw className="w-3 h-3" aria-hidden="true" />
+              <span>Reintentar carga</span>
+            </button>
+          )}
+        </div>
+
+        {isModelLoading && (
+          <div className="w-full h-1.5 rounded-full bg-hairline overflow-hidden">
+            <div
+              className="h-full bg-ink transition-all duration-150"
+              style={{ width: `${Math.max(4, progressPct)}%` }}
+            />
+          </div>
+        )}
+      </div>
+
       {/* Primary Biometric Capture Action */}
       <button
         type="button"
@@ -162,7 +223,11 @@ export default function BiometricCameraPanel({
         {isExtracting ? (
           <>
             <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
-            <span>Extrayendo descriptor 512D...</span>
+            <span>
+              {isModelLoading
+                ? `Esperando modelo biométrico (${progressPct}%)...`
+                : 'Extrayendo descriptor 512D...'}
+            </span>
           </>
         ) : vector512 ? (
           <>
